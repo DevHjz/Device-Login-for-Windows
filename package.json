@@ -1,0 +1,61 @@
+{
+  "name": "cloud-verify-device-login",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Cloud Verify Device Login for Windows",
+  "main": "dist/main/index.js",
+  "license": "Apache-2.0",
+  "author": "devhjz",
+  "scripts": {
+    "build:ts": "tsc -p tsconfig.json",
+    "copy:renderer": "node scripts/copy-static.cjs",
+    "build": "pnpm run build:ts && pnpm run copy:renderer",
+    "start": "pnpm run build && electron .",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "verify:native-sso": "node scripts/verify-native-sso.cjs && node scripts/verify-native-sso-grant-error.cjs",
+    "dist:win:x64": "pnpm run build && electron-builder --win nsis --x64",
+    "dist:win:arm64": "pnpm run build && electron-builder --win nsis --arm64"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2"
+  },
+  "build": {
+    "appId": "com.devhjz.cloudverify.device-login",
+    "productName": "云端验证设备登录助手",
+    "executableName": "cloud-verify-device-login",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/app.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "artifactName": "cloud-verify-device-login-${version}-win-${arch}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": false,
+      "include": "assets/installer.nsh",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "云端验证设备登录助手",
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

@@ -1,0 +1,32 @@
+# Dependencies and build output
+node_modules/
+dist/
+release/
+*.asar
+
+# Local development and diagnostics
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Local identity data: never commit tenant secrets, tokens, or device credentials
+settings.json
+tenants.json
+session.json
+*.secret
+*.key
+*.pfx
+*.p12
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary working files
+*.next.*
+*.previous.*

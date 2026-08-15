@@ -1,0 +1,108 @@
+name: Build Windows Installers
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      validate_sensitive_secrets:
+        description: 'Validate that tenant client-secret placeholders exist in GitHub Secrets (values are never written to files or artifacts)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  validate-sensitive-secrets:
+    name: Validate protected secret placeholders
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.validate_sensitive_secrets }}
+    env:
+      TENANT_HUANGFA_CLIENT_SECRET: ${{ secrets.TENANT_HUANGFA_CLIENT_SECRET }}
+      TENANT_PUBLIC_IAM_CLIENT_SECRET: ${{ secrets.TENANT_PUBLIC_IAM_CLIENT_SECRET }}
+    steps:
+      - name: Confirm secrets are configured without revealing values
+        shell: bash
+        run: |
+          test -n "$TENANT_HUANGFA_CLIENT_SECRET" || { echo 'Missing TENANT_HUANGFA_CLIENT_SECRET'; exit 1; }
+          test -n "$TENANT_PUBLIC_IAM_CLIENT_SECRET" || { echo 'Missing TENANT_PUBLIC_IAM_CLIENT_SECRET'; exit 1; }
+          echo 'Protected secret placeholders are configured. No secret is written to the workspace or release artifact.'
+
+  build:
+    name: Build Windows ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify source and Native SSO protocol
+        run: |
+          pnpm run check
+          pnpm run build
+          pnpm run verify:native-sso
+
+      - name: Build installer
+        run: pnpm run dist:win:${{ matrix.arch }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.arch }}
+          path: release/cloud-verify-device-login-*-win-${{ matrix.arch }}-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  bundle:
+    name: Create dual-architecture installer bundle
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download x64 installer
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-x64
+          path: installers
+
+      - name: Download ARM64 installer
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-arm64
+          path: installers
+
+      - name: Create release archive with two installers
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path installers -Filter '*.exe'
+          if ($files.Count -ne 2) { throw "Expected exactly two installer files, found $($files.Count)." }
+          Compress-Archive -Path $files.FullName -DestinationPath cloud-verify-device-login-windows-x64-arm64.zip -Force
+
+      - name: Upload combined release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-verify-device-login-windows-x64-arm64
+          path: cloud-verify-device-login-windows-x64-arm64.zip
+          if-no-files-found: error
+          retention-days: 30

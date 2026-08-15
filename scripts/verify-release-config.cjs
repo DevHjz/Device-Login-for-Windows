@@ -1,0 +1,26 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.join(__dirname, '..');
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'windows-release.yml'), 'utf8');
+const gitignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+
+assert.equal(packageJson.build.productName, '云端验证设备登录助手');
+assert.equal(packageJson.build.executableName, 'cloud-verify-device-login');
+assert.match(packageJson.build.win.artifactName, /cloud-verify-device-login/);
+assert.deepEqual(packageJson.build.win.target[0].arch, ['x64', 'arm64']);
+assert.equal(packageJson.build.nsis.shortcutName, '云端验证设备登录助手');
+assert.equal(packageJson.build.nsis.allowToChangeInstallationDirectory, false);
+assert.match(workflow, /arch: \[x64, arm64\]/);
+assert.match(workflow, /Expected exactly two installer files/);
+assert.match(workflow, /Compress-Archive/);
+assert.match(workflow, /TENANT_HUANGFA_CLIENT_SECRET/);
+assert.match(workflow, /TENANT_PUBLIC_IAM_CLIENT_SECRET/);
+assert.match(workflow, /No secret is written to the workspace or release artifact/);
+assert.match(gitignore, /tenants\.json/);
+assert.match(gitignore, /session\.json/);
+assert.ok(fs.existsSync(path.join(root, 'assets', 'logo.png')));
+assert.ok(fs.existsSync(path.join(root, 'assets', 'app.ico')));
+console.log('Release configuration verification passed.');
