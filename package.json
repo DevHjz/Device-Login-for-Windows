@@ -13,8 +13,8 @@
     "start": "pnpm run build && electron .",
     "check": "tsc -p tsconfig.json --noEmit",
     "verify:native-sso": "node scripts/verify-native-sso.cjs && node scripts/verify-native-sso-grant-error.cjs",
-    "dist:win:x64": "pnpm run build && electron-builder --win nsis --x64",
-    "dist:win:arm64": "pnpm run build && electron-builder --win nsis --arm64"
+    "dist:win:x64": "pnpm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:win:arm64": "pnpm run build && electron-builder --win nsis --arm64 --publish never"
   },
   "dependencies": {},
   "devDependencies": {

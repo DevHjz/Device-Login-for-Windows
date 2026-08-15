@@ -13,6 +13,8 @@ assert.match(packageJson.build.win.artifactName, /cloud-verify-device-login/);
 assert.deepEqual(packageJson.build.win.target[0].arch, ['x64', 'arm64']);
 assert.equal(packageJson.build.nsis.shortcutName, '云端验证设备登录助手');
 assert.equal(packageJson.build.nsis.allowToChangeInstallationDirectory, false);
+assert.match(packageJson.scripts['dist:win:x64'], /--publish never/);
+assert.match(packageJson.scripts['dist:win:arm64'], /--publish never/);
 assert.match(workflow, /arch: \[x64, arm64\]/);
 assert.match(workflow, /Expected exactly two installer files/);
 assert.match(workflow, /Compress-Archive/);
