@@ -13,6 +13,7 @@ const PROTOCOL = 'cloud-verify-device-login'
 const CALLBACK_URI = `${PROTOCOL}://oauth/callback`
 const DEFAULT_PORT = 47321
 const APP_USER_MODEL_ID = 'com.devhjz.cloudverify.device-login'
+const START_IN_TRAY_ARGUMENT = '--start-in-tray'
 const TENANT_STORE_FILE = 'tenants.json'
 const SESSION_FILE = 'session.json'
 
@@ -80,6 +81,7 @@ let pendingLoginState: string | null = null
 let companionRunning = false
 let lastError = ''
 let isQuitting = false
+let launchInTray = process.argv.includes(START_IN_TRAY_ARGUMENT)
 const approvals = new ToastApprovalManager(APP_USER_MODEL_ID)
 
 function appDataPath(fileName: string): string {
@@ -87,7 +89,10 @@ function appDataPath(fileName: string): string {
 }
 
 function iconPath(): string {
-  return path.join(__dirname, '../assets/app.ico')
+  // 安装后从 resources 目录读取独立图标，避免 Windows 回退到默认应用图标。
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'app.ico')
+    : path.join(__dirname, '../assets/app.ico')
 }
 
 function encodeProtected(value: string): string {
@@ -420,7 +425,9 @@ function createMainWindow(): void {
   })
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { void shell.openExternal(url); return { action: 'deny' } })
   void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
+  mainWindow.once('ready-to-show', () => {
+    if (!launchInTray) mainWindow?.show()
+  })
   mainWindow.on('close', (event) => {
     if (!isQuitting) { event.preventDefault(); mainWindow?.hide() }
   })
@@ -540,7 +547,13 @@ async function deleteTenant(tenantId: string): Promise<void> {
 }
 
 function applyLaunchAtLogin(enabled: boolean): void {
-  if (process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true })
+  if (process.platform === 'win32') {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      openAsHidden: true,
+      args: enabled ? [START_IN_TRAY_ARGUMENT] : [],
+    })
+  }
 }
 
 function registerIpc(): void {
@@ -583,7 +596,11 @@ if (!gotLock) app.quit()
 else {
   app.on('second-instance', (_event, commandLine) => {
     const callbackUrl = extractProtocolUrl(commandLine)
-    if (callbackUrl) void handleProtocolUrl(callbackUrl).catch((error) => { lastError = userFacingError(error); publishStatus() })
+    if (callbackUrl) {
+      // “允许/拒绝”通知只完成审批，不得干扰用户当前窗口。
+      void handleProtocolUrl(callbackUrl).catch((error) => { lastError = userFacingError(error); publishStatus() })
+      return
+    }
     showMainWindow()
   })
   app.on('open-url', (event, url) => {
@@ -591,7 +608,10 @@ else {
     void handleProtocolUrl(url).catch((error) => { lastError = userFacingError(error); publishStatus() })
   })
   void app.whenReady().then(async () => {
+    app.setName(PRODUCT_NAME)
     app.setAppUserModelId(APP_USER_MODEL_ID)
+    const loginItemSettings = app.getLoginItemSettings()
+    launchInTray = launchInTray || Boolean(loginItemSettings.wasOpenedAtLogin)
     registerProtocol()
     registerIpc()
     applyLaunchAtLogin((await getStore()).preferences.launchAtLogin)

@@ -1,6 +1,6 @@
 {
   "name": "cloud-verify-device-login",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Cloud Verify Device Login for Windows",
   "main": "dist/main/index.js",
@@ -36,9 +36,15 @@
       "dist/**",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "assets/app.ico",
+        "to": "app.ico"
+      }
+    ],
     "win": {
       "icon": "assets/app.ico",
-      "signAndEditExecutable": false,
+      "signAndEditExecutable": true,
       "target": [
         {
           "target": "nsis",
@@ -51,6 +57,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": false,
       "include": "assets/installer.nsh",
+      "installerIcon": "assets/app.ico",
+      "uninstallerIcon": "assets/app.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "云端验证设备登录助手",

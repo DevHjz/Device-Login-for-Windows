@@ -9,6 +9,11 @@ const gitignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
 
 assert.equal(packageJson.build.productName, '云端验证设备登录助手');
 assert.equal(packageJson.build.executableName, 'cloud-verify-device-login');
+assert.equal(packageJson.build.win.icon, 'assets/app.ico');
+assert.equal(packageJson.build.win.signAndEditExecutable, true);
+assert.equal(packageJson.build.nsis.installerIcon, 'assets/app.ico');
+assert.equal(packageJson.build.nsis.uninstallerIcon, 'assets/app.ico');
+assert.deepEqual(packageJson.build.extraResources, [{ from: 'assets/app.ico', to: 'app.ico' }]);
 assert.match(packageJson.build.win.artifactName, /cloud-verify-device-login/);
 assert.deepEqual(packageJson.build.win.target[0].arch, ['x64', 'arm64']);
 assert.equal(packageJson.build.nsis.shortcutName, '云端验证设备登录助手');
