@@ -249,17 +249,20 @@ export class NativeSsoService {
         return
       }
 
-      const requestKey = JSON.stringify({
+      // 部分默认网页应用不会发送 state 和 redirectUri；这类请求不能使用固定字段去重，
+      // 否则第二次登录会被误判为旧请求。只有带有至少一个有效标识时才进行并发保护。
+      const hasRequestIdentity = Boolean(input.state || input.redirectUri)
+      const requestKey = hasRequestIdentity ? JSON.stringify({
         clientId: input.clientId,
         redirectUri: input.redirectUri,
         state: input.state,
         codeChallenge: input.codeChallenge,
-      })
-      if (this.inFlightRequests.has(requestKey)) {
+      }) : null
+      if (requestKey && this.inFlightRequests.has(requestKey)) {
         writeJson(response, 409, { status: 'denied', message: '相同的登录请求正在处理中，请稍候。' })
         return
       }
-      this.inFlightRequests.add(requestKey)
+      if (requestKey) this.inFlightRequests.add(requestKey)
 
       try {
         const approved = await this.options.approve({
@@ -280,7 +283,7 @@ export class NativeSsoService {
         })
       } finally {
         // 只防止同一请求的并发重复处理；一次授权完成后，下一次网页登录必须能够再次请求。
-        this.inFlightRequests.delete(requestKey)
+        if (requestKey) this.inFlightRequests.delete(requestKey)
       }
     } catch (error) {
       writeJson(response, 500, {
