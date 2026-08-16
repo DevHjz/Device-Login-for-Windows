@@ -83,6 +83,7 @@ let companion: NativeSsoService | null = null
 let companionPort: number | null = null
 let sessionExpiryTimer: NodeJS.Timeout | null = null
 const pendingLoginRequests = new Map<string, PendingLoginRequest>()
+const recentOAuthCallbacks = new Map<string, NodeJS.Timeout>()
 let companionRunning = false
 let lastError = ''
 let isQuitting = false
@@ -216,6 +217,18 @@ function consumeLoginRequest(state: string): PendingLoginRequest | null {
   return request
 }
 
+function isDuplicateOAuthCallback(url: URL): boolean {
+  const key = [
+    url.searchParams.get('state') || '',
+    url.searchParams.get('code') || '',
+    url.searchParams.get('error') || '',
+  ].join('|')
+  if (recentOAuthCallbacks.has(key)) return true
+  const timeout = setTimeout(() => recentOAuthCallbacks.delete(key), 15_000)
+  recentOAuthCallbacks.set(key, timeout)
+  return false
+}
+
 function validateTenantInput(input: TenantInput, existing?: Tenant): Tenant {
   const displayName = String(input.displayName ?? existing?.displayName ?? '').trim()
   const endpoint = normalizeEndpoint(String(input.endpoint ?? existing?.endpoint ?? ''))
@@ -299,7 +312,8 @@ async function showNativeSsoApproval(input: { applicationName?: string; userName
   })
   if (!allowed) return false
   if (currentStore.preferences.requireWindowsHello) {
-    await verifyWithWindowsHello('确认允许本次网页登录')
+    const applicationName = input.applicationName || '该应用'
+    await verifyWithWindowsHello(`您正在请求登录${applicationName}应用，\n请使用您的凭据授权该应用访问您的账号。`)
   }
   return true
 }
@@ -405,6 +419,8 @@ async function handleProtocolUrl(rawUrl: string): Promise<void> {
   if (url.hostname === 'approval') { approvals.handleProtocolUrl(rawUrl); return }
   if (url.hostname === 'show') { showMainWindow(); return }
   if (url.hostname !== 'oauth') return
+  // 授权窗口和 second-instance 可能同时收到同一个自定义协议回调，只允许处理一次。
+  if (isDuplicateOAuthCallback(url)) return
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   if (!code || !state) throw new Error('登录回调信息不完整，请返回网页后重新操作。')
