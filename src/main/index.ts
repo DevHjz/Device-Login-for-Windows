@@ -58,6 +58,11 @@ type StoredSession = {
 
 type PublicTenant = Omit<Tenant, 'clientSecretEncrypted'> & { hasClientSecret: boolean }
 
+type PendingLoginRequest = {
+  tenantId: string
+  timeout: NodeJS.Timeout
+}
+
 type Status = {
   configured: boolean
   signedIn: boolean
@@ -77,7 +82,7 @@ let tray: Tray | null = null
 let companion: NativeSsoService | null = null
 let companionPort: number | null = null
 let sessionExpiryTimer: NodeJS.Timeout | null = null
-let pendingLoginState: string | null = null
+const pendingLoginRequests = new Map<string, PendingLoginRequest>()
 let companionRunning = false
 let lastError = ''
 let isQuitting = false
@@ -187,6 +192,28 @@ async function getActiveTenant(store?: TenantStore): Promise<Tenant> {
   const tenant = listTenants(currentStore).find((item) => item.id === currentStore.activeTenantId)
   if (!tenant) throw new Error('请先添加并选择一个租户。')
   return tenant
+}
+
+async function getTenantById(tenantId: string): Promise<Tenant> {
+  const store = await getStore()
+  const tenant = listTenants(store).find((item) => item.id === tenantId)
+  if (!tenant) throw new Error('登录请求对应的租户已不存在，请重新发起登录。')
+  return tenant
+}
+
+function rememberLoginRequest(state: string, tenantId: string): void {
+  const previous = pendingLoginRequests.get(state)
+  if (previous) clearTimeout(previous.timeout)
+  const timeout = setTimeout(() => pendingLoginRequests.delete(state), 10 * 60 * 1000)
+  pendingLoginRequests.set(state, { tenantId, timeout })
+}
+
+function consumeLoginRequest(state: string): PendingLoginRequest | null {
+  const request = pendingLoginRequests.get(state)
+  if (!request) return null
+  clearTimeout(request.timeout)
+  pendingLoginRequests.delete(state)
+  return request
 }
 
 function validateTenantInput(input: TenantInput, existing?: Tenant): Tenant {
@@ -380,9 +407,10 @@ async function handleProtocolUrl(rawUrl: string): Promise<void> {
   if (url.hostname !== 'oauth') return
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
-  if (!code || !state || state !== pendingLoginState) throw new Error('登录请求已失效，请重新发起登录。')
-  pendingLoginState = null
-  const tenant = await getActiveTenant()
+  if (!code || !state) throw new Error('登录回调信息不完整，请返回网页后重新操作。')
+  const request = consumeLoginRequest(state)
+  if (!request) throw new Error('本次登录请求已失效，请返回网页后重新操作。')
+  const tenant = await getTenantById(request.tenantId)
   const sdk = createIdentityClient(tenant)
   const tokens = await sdk.getAuthToken(code)
   const user = sdk.parseAndVerifyAccessToken(tokens.access_token)
@@ -464,7 +492,7 @@ function createAuthWindow(url: string): void {
   }
   authWindow.webContents.on('will-navigate', (event, target) => { if (isProtocolUrl(target)) { event.preventDefault(); capture(target) } })
   authWindow.webContents.on('will-redirect', (event, target) => { if (isProtocolUrl(target)) { event.preventDefault(); capture(target) } })
-  authWindow.on('closed', () => { authWindow = null; pendingLoginState = null })
+  authWindow.on('closed', () => { authWindow = null })
   void authWindow.loadURL(url)
 }
 
@@ -579,8 +607,9 @@ function registerIpc(): void {
   ipcMain.handle('auth:login', async () => {
     const tenant = await getActiveTenant()
     if (!tenant.clientSecretEncrypted) throw new Error('当前租户尚未完成安全配置，请先保存客户端密钥。')
-    pendingLoginState = crypto.randomBytes(32).toString('base64url')
-    createAuthWindow(createSignInUrl(tenant, pendingLoginState))
+    const state = crypto.randomBytes(32).toString('base64url')
+    rememberLoginRequest(state, tenant.id)
+    createAuthWindow(createSignInUrl(tenant, state))
   })
   ipcMain.handle('auth:logout', async () => {
     await stopCompanion()

@@ -96,7 +96,8 @@ export async function verifyWithWindowsHello(reason: string): Promise<boolean> {
   }
 
   try {
-    const result = await runPowerShell(verifyScript(reason))
+    const preferredReason = `请优先使用人脸验证；如果人脸不可用，可以使用 PIN。\n${reason}`
+    const result = await runPowerShell(verifyScript(preferredReason))
     if (result === 'Verified') return true
     if (result === 'Canceled') {
       throw new Error('您已取消 Windows Hello 验证。')

@@ -23,7 +23,7 @@ function buildToastXml(requestId: string, targetName: string, accountName: strin
   const allow = `${appProtocol}://approval?request=${encodeURIComponent(requestId)}&decision=allow`
   const deny = `${appProtocol}://approval?request=${encodeURIComponent(requestId)}&decision=deny`
   const show = `${appProtocol}://show`
-  return `<toast launch="${xmlEscape(show)}" activationType="protocol"><visual><binding template="ToastGeneric"><text>云端验证设备登录助手</text><text>“${xmlEscape(targetName)}”请求使用当前设备完成登录。</text><text>登录账户：${xmlEscape(accountName)}</text></binding></visual><actions><action content="允许登录" activationType="protocol" arguments="${xmlEscape(allow)}"/><action content="拒绝" activationType="protocol" arguments="${xmlEscape(deny)}"/></actions><audio silent="true"/></toast>`
+  return `<toast launch="${xmlEscape(show)}" activationType="protocol"><visual><binding template="ToastGeneric"><text>云端验证设备登录助手</text><text>“${xmlEscape(targetName)}”请求使用当前设备完成登录。</text><text>登录账户：${xmlEscape(accountName)}</text></binding></visual><actions><action content="授权登录" activationType="protocol" arguments="${xmlEscape(allow)}"/><action content="拒绝" activationType="protocol" arguments="${xmlEscape(deny)}"/></actions><audio silent="true"/></toast>`
 }
 
 async function showToast(xml: string, appId: string): Promise<void> {
