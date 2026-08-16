@@ -99,7 +99,7 @@ function requestString(value: unknown): string {
 export class NativeSsoService {
   private server: http.Server | null = null
   private port: number | null = null
-  private approvedRequests = new Set<string>()
+  private inFlightRequests = new Set<string>()
 
   constructor(private readonly options: NativeSsoServiceOptions) {}
 
@@ -117,7 +117,7 @@ export class NativeSsoService {
   }
 
   public async stop(): Promise<void> {
-    this.approvedRequests.clear()
+    this.inFlightRequests.clear()
     if (!this.server) {
       this.port = null
       return
@@ -255,28 +255,33 @@ export class NativeSsoService {
         state: input.state,
         codeChallenge: input.codeChallenge,
       })
-      if (this.approvedRequests.has(requestKey)) {
-        writeJson(response, 409, { status: 'denied', message: '本次登录请求已失效，请返回网页后重新操作。' })
+      if (this.inFlightRequests.has(requestKey)) {
+        writeJson(response, 409, { status: 'denied', message: '相同的登录请求正在处理中，请稍候。' })
         return
       }
+      this.inFlightRequests.add(requestKey)
 
-      const approved = await this.options.approve({
-        applicationName: input.applicationName || input.clientId,
-        userName: this.options.session.userName,
-        displayName: this.options.session.displayName,
-      })
-      if (!approved) {
-        writeJson(response, 200, { status: 'denied', message: '用户拒绝了 Native SSO 登录请求' })
-        return
+      try {
+        const approved = await this.options.approve({
+          applicationName: input.applicationName || input.clientId,
+          userName: this.options.session.userName,
+          displayName: this.options.session.displayName,
+        })
+        if (!approved) {
+          writeJson(response, 200, { status: 'denied', message: '用户拒绝了 Native SSO 登录请求' })
+          return
+        }
+
+        const exchanged = await this.exchangeToken(input)
+        writeJson(response, 200, {
+          status: 'approved',
+          accessToken: exchanged.access_token,
+          token: exchanged,
+        })
+      } finally {
+        // 只防止同一请求的并发重复处理；一次授权完成后，下一次网页登录必须能够再次请求。
+        this.inFlightRequests.delete(requestKey)
       }
-
-      const exchanged = await this.exchangeToken(input)
-      this.approvedRequests.add(requestKey)
-      writeJson(response, 200, {
-        status: 'approved',
-        accessToken: exchanged.access_token,
-        token: exchanged,
-      })
     } catch (error) {
       writeJson(response, 500, {
         status: 'denied',

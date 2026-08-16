@@ -82,7 +82,26 @@ async function main() {
     assert.equal(authorizeBody.status, 'approved');
     assert.equal(authorizeBody.accessToken, 'native-sso-token');
     assert.equal(approvals, 1);
-    console.log('Native SSO protocol compatibility check passed.');
+
+    const authorizeAgain = await fetch(`http://127.0.0.1:${port}/native-sso/authorize`, {
+      method: 'POST',
+      headers: { ...originHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serverUrl: fake.endpoint,
+        clientId: 'target-client',
+        applicationName: 'Target App',
+        responseType: 'login',
+        redirectUri: '',
+        scope: 'openid profile email device_sso',
+        state: '',
+        codeChallenge: '',
+      }),
+    });
+    const authorizeAgainBody = await authorizeAgain.json();
+    assert.equal(authorizeAgainBody.status, 'approved');
+    assert.equal(authorizeAgainBody.accessToken, 'native-sso-token');
+    assert.equal(approvals, 2);
+    console.log('Native SSO protocol compatibility and repeat-authorization check passed.');
   } finally {
     await service.stop();
     await new Promise((resolve) => fake.server.close(resolve));
