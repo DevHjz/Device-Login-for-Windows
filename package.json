@@ -1,6 +1,6 @@
 {
   "name": "cloud-verify-device-login",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "private": true,
   "description": "Cloud Verify Device Login for Windows",
   "main": "dist/main/index.js",
@@ -13,6 +13,7 @@
     "start": "pnpm run build && electron .",
     "check": "tsc -p tsconfig.json --noEmit",
     "verify:native-sso": "node scripts/verify-native-sso.cjs && node scripts/verify-native-sso-grant-error.cjs",
+    "verify:windows-shell": "node scripts/verify-windows-shell-integration.cjs",
     "dist:win:x64": "pnpm run build && electron-builder --win nsis --x64 --publish never",
     "dist:win:arm64": "pnpm run build && electron-builder --win nsis --arm64 --publish never"
   },

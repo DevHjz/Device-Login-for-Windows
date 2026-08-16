@@ -610,6 +610,8 @@ else {
   void app.whenReady().then(async () => {
     app.setName(PRODUCT_NAME)
     app.setAppUserModelId(APP_USER_MODEL_ID)
+    // 客户交付版不显示 Electron 默认的 File、Edit 等顶部菜单。
+    Menu.setApplicationMenu(null)
     const loginItemSettings = app.getLoginItemSettings()
     launchInTray = launchInTray || Boolean(loginItemSettings.wasOpenedAtLogin)
     registerProtocol()

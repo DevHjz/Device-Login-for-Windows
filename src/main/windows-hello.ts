@@ -7,24 +7,34 @@ function encodePowerShell(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64')
 }
 
-function awaitWinRt(operationExpression: string): string[] {
+function awaitWinRt(operationExpression: string, resultTypeExpression: string): string[] {
   return [
     'Add-Type -AssemblyName System.Runtime.WindowsRuntime',
     '[void][Windows.Security.Credentials.UI.UserConsentVerifier, Windows.Security.Credentials.UI, ContentType=WindowsRuntime]',
+    // PowerShell 无法可靠推断 AsTask<TResult> 的 WinRT 泛型参数，必须显式选择该重载。
+    "$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetGenericArguments().Count -eq 1 -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]",
+    "if ($null -eq $asTaskGeneric) { throw 'Windows Hello 异步接口不可用。' }",
+    `$resultType = ${resultTypeExpression}`,
     `$operation = ${operationExpression}`,
-    '$task = [System.WindowsRuntimeSystemExtensions]::AsTask($operation)',
+    '$task = $asTaskGeneric.MakeGenericMethod($resultType).Invoke($null, @($operation))',
     '$task.GetAwaiter().GetResult().ToString()',
   ]
 }
 
-const availabilityScript = awaitWinRt('[Windows.Security.Credentials.UI.UserConsentVerifier]::CheckAvailabilityAsync()').join('\n')
+const availabilityScript = awaitWinRt(
+  '[Windows.Security.Credentials.UI.UserConsentVerifier]::CheckAvailabilityAsync()',
+  '[Windows.Security.Credentials.UI.UserConsentVerifierAvailability]',
+).join('\n')
 
 function escapePowerShell(value: string): string {
   return value.replace(/'/g, "''")
 }
 
 function verifyScript(reason: string): string {
-  return awaitWinRt(`[Windows.Security.Credentials.UI.UserConsentVerifier]::RequestVerificationAsync('${escapePowerShell(reason)}')`).join('\n')
+  return awaitWinRt(
+    `[Windows.Security.Credentials.UI.UserConsentVerifier]::RequestVerificationAsync('${escapePowerShell(reason)}')`,
+    '[Windows.Security.Credentials.UI.UserConsentVerificationResult]',
+  ).join('\n')
 }
 
 function resultLine(output: string): string {

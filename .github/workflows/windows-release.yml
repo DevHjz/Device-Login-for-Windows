@@ -63,6 +63,8 @@ jobs:
           pnpm run check
           pnpm run build
           pnpm run verify:native-sso
+          pnpm run verify:windows-shell
+          node scripts/verify-release-config.cjs
 
       - name: Build installer
         run: pnpm run dist:win:${{ matrix.arch }}
