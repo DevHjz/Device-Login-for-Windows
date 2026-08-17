@@ -12,7 +12,7 @@ type PublicTenant = {
 }
 type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean }
 type HelloAvailability = { available: boolean; message: string }
-type SecurityCheck = { id: 'password' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
+type SecurityCheck = { id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
 type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; unknownCount: number; checkedAt: string; localIp: string; publicAccess: boolean; platformSupported: boolean }
 type Status = {
   configured: boolean; signedIn: boolean; companionRunning: boolean; userName?: string; displayName?: string; email?: string; devicePort?: number
@@ -124,7 +124,7 @@ function renderStatus(status: Status): void {
 
 function riskText(report: DeviceSecurityReport): { title: string; summary: string } {
   if (!report.platformSupported) return { title: '当前环境暂不支持检测', summary: '设备安全态势仅在 Windows 设备上提供。' }
-  if (report.risk === 'pass') return { title: '通过检测', summary: '设备登录凭据、杀毒软件、病毒库和防火墙均通过检测。' }
+  if (report.risk === 'pass') return { title: '通过检测', summary: '设备登录凭据、C 盘 BitLocker、杀毒软件、病毒库和防火墙均通过检测。' }
   if (report.risk === 'danger') return { title: '高危风险', summary: `发现 ${report.issueCount} 项明确的安全问题，请尽快检查设备设置。` }
   if (report.issueCount > 0 && report.unknownCount > 0) return { title: '存在隐患', summary: `发现 ${report.issueCount} 项安全问题；另有 ${report.unknownCount} 项状态需要重新检测。` }
   if (report.issueCount > 0) return { title: '存在隐患', summary: `发现 ${report.issueCount} 项需要处理的安全问题。` }
@@ -134,7 +134,7 @@ function riskText(report: DeviceSecurityReport): { title: string; summary: strin
 function renderSecurity(report?: DeviceSecurityReport): void {
   if (!report) {
     elements.securityTitle.textContent = '正在进行安全检查…'
-    elements.securitySummary.textContent = '将检查设备登录凭据、杀毒软件、病毒库和 Windows 防火墙。本功能仅展示状态，不修改系统设置。'
+    elements.securitySummary.textContent = '将通过本机 Windows 管理接口检查设备登录凭据、C 盘 BitLocker、杀毒软件、病毒库和 Windows 防火墙。本功能仅展示状态，不修改系统设置。'
     elements.securityList.replaceChildren()
     elements.securityCheckedAt.textContent = '正在读取检测时间…'
     return

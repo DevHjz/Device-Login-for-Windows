@@ -6,7 +6,7 @@ const execFileAsync = promisify(execFile)
 export type SecurityCheckState = 'pass' | 'warning' | 'unknown'
 
 export type SecurityCheck = {
-  id: 'password' | 'antivirus' | 'signatures' | 'firewall'
+  id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'
   title: string
   state: SecurityCheckState
   detail: string
@@ -26,6 +26,7 @@ export type DeviceSecurityReport = {
 type CheckValue = { available?: boolean; value?: boolean; detail?: string }
 type RawSecurityData = {
   password?: CheckValue
+  bitlocker?: CheckValue & { volumeStatus?: string; protectionStatus?: string; encryptionPercentage?: number }
   antivirus?: CheckValue & { names?: string[] }
   signatures?: CheckValue & { ageDays?: number }
   firewall?: CheckValue
@@ -36,13 +37,15 @@ type RawSecurityData = {
 
 function encodedPowerShell(script: string): string { return Buffer.from(script, 'utf16le').toString('base64') }
 
+/** PowerShell 以 UTF-8 Base64 输出 JSON，避免宿主控制台代码页污染中文内容。 */
 async function runPowerShell(script: string): Promise<RawSecurityData> {
   const { stdout } = await execFileAsync('powershell.exe', [
-    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodedPowerShell(script),
-  ], { windowsHide: true, timeout: 25_000, maxBuffer: 512 * 1024 })
-  const payload = stdout.trim()
+    '-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', encodedPowerShell(script),
+  ], { windowsHide: true, timeout: 30_000, maxBuffer: 512 * 1024 })
+  const payload = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)?.trim()
   if (!payload) throw new Error('Windows 系统信息接口没有返回数据。')
-  return JSON.parse(payload) as RawSecurityData
+  try { return JSON.parse(Buffer.from(payload, 'base64').toString('utf8')) as RawSecurityData }
+  catch { throw new Error('Windows 系统信息接口返回了无法识别的检测数据。') }
 }
 
 function asBoolean(value: unknown): boolean | undefined { return typeof value === 'boolean' ? value : undefined }
@@ -64,10 +67,15 @@ function detailFor(value: CheckValue | undefined, passText: string, warningText:
 function buildReport(data: RawSecurityData, platformSupported = true): DeviceSecurityReport {
   const antivirusNames = Array.isArray(data.antivirus?.names) ? data.antivirus.names.map(asText).filter(Boolean) : []
   const signatureAge = typeof data.signatures?.ageDays === 'number' ? data.signatures.ageDays : undefined
+  const bitLockerStatus = [asText(data.bitlocker?.volumeStatus), asText(data.bitlocker?.protectionStatus), typeof data.bitlocker?.encryptionPercentage === 'number' ? `已加密 ${data.bitlocker.encryptionPercentage}%` : ''].filter(Boolean).join('；')
   const checks: SecurityCheck[] = [
     {
       id: 'password', title: '设备登录凭据', state: stateFrom(data.password),
-      detail: detailFor(data.password, '已检测到当前 Windows 账户需要受保护的登录凭据。', '当前 Windows 账户不要求登录凭据。', '未能读取当前 Windows 账户的凭据策略。'),
+      detail: detailFor(data.password, '当前 Windows 账户要求使用密码或系统凭据登录。', '当前 Windows 账户未要求密码或系统凭据。', '未能读取当前 Windows 账户的凭据策略。'),
+    },
+    {
+      id: 'bitlocker', title: 'C 盘 BitLocker', state: stateFrom(data.bitlocker),
+      detail: detailFor(data.bitlocker, `C 盘 BitLocker 已启用并完成加密${bitLockerStatus ? `（${bitLockerStatus}）` : ''}。`, `C 盘 BitLocker 未完全启用${bitLockerStatus ? `（${bitLockerStatus}）` : ''}。`, '未能读取 C 盘 BitLocker 状态。'),
     },
     {
       id: 'antivirus', title: '杀毒软件', state: stateFrom(data.antivirus),
@@ -79,7 +87,7 @@ function buildReport(data: RawSecurityData, platformSupported = true): DeviceSec
     },
     {
       id: 'firewall', title: 'Windows 防火墙', state: stateFrom(data.firewall),
-      detail: detailFor(data.firewall, '所有有效网络配置文件均已启用防火墙。', '至少一个有效网络配置文件未启用防火墙。', '未能读取当前 Windows 防火墙活动策略。'),
+      detail: detailFor(data.firewall, '域、专用与公用网络配置文件均已启用防火墙。', '至少一个 Windows 防火墙配置文件未启用。', '未能读取 Windows 防火墙活动策略。'),
     },
   ]
   const issueCount = checks.filter((check) => check.state === 'warning').length
@@ -93,124 +101,92 @@ function buildReport(data: RawSecurityData, platformSupported = true): DeviceSec
 
 const securityScript = `
 $ErrorActionPreference = 'Stop'
+function New-Check { [ordered]@{ available = $false; value = $null; detail = '' } }
 $result = [ordered]@{
   platformSupported = $true
-  password = [ordered]@{ available = $false; value = $null; detail = '' }
+  password = New-Check
+  bitlocker = [ordered]@{ available = $false; value = $null; detail = ''; volumeStatus = ''; protectionStatus = ''; encryptionPercentage = $null }
   antivirus = [ordered]@{ available = $false; value = $null; detail = ''; names = @() }
   signatures = [ordered]@{ available = $false; value = $null; detail = ''; ageDays = $null }
-  firewall = [ordered]@{ available = $false; value = $null; detail = '' }
+  firewall = New-Check
   localIp = ''
   publicAccess = $false
 }
 
-# NetUserGetInfo 读取当前账户的 UF_PASSWD_NOTREQD 标志，避免依赖不稳定的 Win32_UserAccount CIM 属性。
+# Win32_UserAccount.PasswordRequired：当前本地账户是否要求 Windows 登录凭据。
 try {
-  Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-[StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
-public struct USER_INFO_1 {
-  public string usri1_name; public string usri1_password; public int usri1_password_age; public int usri1_priv;
-  public string usri1_home_dir; public string usri1_comment; public int usri1_flags; public string usri1_script_path;
-}
-public static class CloudVerifyNetApi {
-  [DllImport("Netapi32.dll", CharSet=CharSet.Unicode)]
-  public static extern int NetUserGetInfo(string servername, string username, int level, out IntPtr bufptr);
-  [DllImport("Netapi32.dll")]
-  public static extern int NetApiBufferFree(IntPtr buffer);
-}
-'@ -ErrorAction SilentlyContinue
-  [IntPtr]$buffer = [IntPtr]::Zero
-  $status = [CloudVerifyNetApi]::NetUserGetInfo($null, [Environment]::UserName, 1, [ref]$buffer)
-  if ($status -eq 0 -and $buffer -ne [IntPtr]::Zero) {
-    $account = [Runtime.InteropServices.Marshal]::PtrToStructure($buffer, [type][USER_INFO_1])
+  $account = @(Get-CimInstance -ClassName Win32_UserAccount -ErrorAction Stop | Where-Object { $_.Name -eq [Environment]::UserName } | Select-Object -First 1)
+  if ($account.Count -eq 1 -and $null -ne $account[0].PasswordRequired) {
     $result.password.available = $true
-    $result.password.value = (($account.usri1_flags -band 0x20) -eq 0)
-    [void][CloudVerifyNetApi]::NetApiBufferFree($buffer)
-  } else {
-    $result.password.detail = "Windows 账户接口返回代码：$status"
-  }
+    $result.password.value = [bool]$account[0].PasswordRequired
+  } else { $result.password.detail = '未找到当前 Windows 账户的 PasswordRequired 属性。' }
 } catch { $result.password.detail = $_.Exception.Message }
 
-# 优先使用 Windows Security Center 的 COM 产品清单；它是第三方安全产品向系统注册后的统一状态入口。
+# Get-BitLockerVolume：读取系统盘 C: 的卷状态、保护状态及加密百分比。
 try {
-  $products = @()
-  $list = New-Object -ComObject 'SecurityCenter.WscProductList'
-  $list.Initialize(4) # WSC_SECURITY_PROVIDER_ANTIVIRUS
-  for ($i = 0; $i -lt $list.Count; $i++) { $products += $list.Item($i) }
-  $result.antivirus.available = $true
-  $result.antivirus.names = @($products | ForEach-Object { [string]$_.ProductName } | Where-Object { $_ })
-  $enabledProducts = @($products | Where-Object { [int]$_.ProductState -eq 0 }) # WSC_SECURITY_PRODUCT_STATE_ON
-  $result.antivirus.value = ($enabledProducts.Count -gt 0)
-  if ($enabledProducts.Count -gt 0) {
-    $signatureStates = @($enabledProducts | ForEach-Object { [int]$_.SignatureStatus })
-    $result.signatures.available = $true
-    $result.signatures.value = (-not ($signatureStates -contains 1)) # WSC_SECURITY_PRODUCT_UP_TO_DATE = 0
-  }
-} catch {
-  # 兼容无法创建 COM 产品清单的系统；WMI 只作为回退读取路径。
-  try {
-    $products = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct -ErrorAction Stop)
-    $result.antivirus.available = $true
-    $result.antivirus.names = @($products | ForEach-Object { [string]$_.displayName } | Where-Object { $_ })
-    $result.antivirus.value = ($products.Count -gt 0)
-    if ($products.Count -gt 0) { $result.signatures.detail = '当前注册安全产品未公开病毒库状态。' }
-  } catch { $result.antivirus.detail = $_.Exception.Message }
-}
+  $volume = Get-BitLockerVolume -MountPoint 'C:' -ErrorAction Stop
+  $result.bitlocker.available = $true
+  $result.bitlocker.volumeStatus = [string]$volume.VolumeStatus
+  $result.bitlocker.protectionStatus = [string]$volume.ProtectionStatus
+  $result.bitlocker.encryptionPercentage = [int]$volume.EncryptionPercentage
+  $result.bitlocker.value = ([string]$volume.VolumeStatus -eq 'FullyEncrypted' -and [string]$volume.ProtectionStatus -ne 'Off' -and [int]$volume.EncryptionPercentage -eq 100)
+} catch { $result.bitlocker.detail = $_.Exception.Message }
 
-# Defender 是 Windows 内置的稳定状态接口；在它实际运行时可提供更精确的实时保护与病毒库年龄。
+# Windows Security Center：读取已向系统注册的安全产品，并按 productState 的实时保护与签名字节判断状态。
+try {
+  $products = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -ErrorAction Stop)
+  $result.antivirus.available = $true
+  $result.antivirus.names = @($products | ForEach-Object { [string]$_.displayName } | Where-Object { $_ })
+  $productStates = @($products | ForEach-Object {
+    $hex = ('{0:X6}' -f [int]$_.productState)
+    [ordered]@{ realTime = [Convert]::ToInt32($hex.Substring(2, 2), 16); signatures = [Convert]::ToInt32($hex.Substring(4, 2), 16) }
+  })
+  $result.antivirus.value = (@($productStates | Where-Object { $_.realTime -eq 0x10 }).Count -gt 0)
+  if ($productStates.Count -gt 0) {
+    $result.signatures.available = $true
+    $result.signatures.value = (@($productStates | Where-Object { $_.signatures -ne 0x00 }).Count -eq 0)
+  }
+} catch { $result.antivirus.detail = $_.Exception.Message }
+
+# Defender 的病毒库时间优先于 Security Center productState 的有限签名判断。
 try {
   $mp = Get-MpComputerStatus -ErrorAction Stop
-  $defenderEnabled = ([bool]$mp.AMServiceEnabled -and [bool]$mp.AntivirusEnabled -and [bool]$mp.RealTimeProtectionEnabled -and [string]$mp.AMRunningMode -eq 'Normal')
-  if ($defenderEnabled -or -not [bool]$result.antivirus.available) {
+  if ([bool]$mp.AntivirusEnabled) {
     $result.antivirus.available = $true
-    $result.antivirus.value = $defenderEnabled
-    $result.antivirus.names = @('Microsoft Defender')
-  }
-  if ($defenderEnabled) {
-    $age = [int]$mp.AntivirusSignatureAge
+    $result.antivirus.value = [bool]$mp.AntivirusEnabled
+    if (@($result.antivirus.names).Count -eq 0) { $result.antivirus.names = @('Microsoft Defender') }
+    $lastUpdated = [datetime]$mp.AntivirusSignatureLastUpdated
+    $age = [math]::Max(0, [math]::Floor(((Get-Date) - $lastUpdated).TotalDays))
     $result.signatures.available = $true
-    $result.signatures.ageDays = $age
-    $result.signatures.value = ($age -ge 0 -and $age -le 7 -and -not [string]::IsNullOrWhiteSpace([string]$mp.AntivirusSignatureVersion))
+    $result.signatures.ageDays = [int]$age
+    $result.signatures.value = ($lastUpdated -gt [datetime]::MinValue -and $age -le 7)
   }
 } catch {}
 
-# HNetCfg.FwPolicy2 读取生效的三类防火墙配置；Get-NetFirewallProfile ActiveStore 用作回退。
+# ActiveStore 内的 Domain、Private、Public 三个配置文件是当前生效的防火墙策略。
 try {
-  $policy = New-Object -ComObject 'HNetCfg.FwPolicy2'
-  $result.firewall.available = $true
-  $result.firewall.value = ([bool]$policy.FirewallEnabled(1) -and [bool]$policy.FirewallEnabled(2) -and [bool]$policy.FirewallEnabled(4))
-} catch {
-  try {
-    $profiles = @(Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop)
-    $result.firewall.available = ($profiles.Count -gt 0)
-    $result.firewall.value = ($profiles.Count -gt 0 -and @($profiles | Where-Object { -not $_.Enabled }).Count -eq 0)
-  } catch { $result.firewall.detail = $_.Exception.Message }
-}
+  $profiles = @(Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop)
+  $expected = @('Domain', 'Private', 'Public')
+  $activeProfiles = @($profiles | Where-Object { $_.Name -in $expected })
+  $result.firewall.available = ($activeProfiles.Count -eq 3)
+  if ($result.firewall.available) { $result.firewall.value = (@($activeProfiles | Where-Object { -not $_.Enabled }).Count -eq 0) }
+  else { $result.firewall.detail = '未读取到完整的 Domain、Private、Public 防火墙配置文件。' }
+} catch { $result.firewall.detail = $_.Exception.Message }
 
-# 使用 .NET 网络接口读取活动物理网卡的 IPv4；不依赖可选的 NetTCPIP 模块。
+# Get-NetIPAddress 返回本机 IPv4；明确保留 RFC 1918 私网地址（10/8、172.16/12、192.168/16）。
 try {
-  $interfaces = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | Where-Object {
-    $_.OperationalStatus -eq [System.Net.NetworkInformation.OperationalStatus]::Up -and
-    $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Loopback -and
-    $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Tunnel
-  }
-  $ips = @($interfaces | ForEach-Object { $_.GetIPProperties().UnicastAddresses } | Where-Object {
-    $_.Address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and
-    $_.Address.IPAddressToString -notlike '169.254.*'
-  } | ForEach-Object { $_.Address.IPAddressToString })
-  $private = @($ips | Where-Object { $_ -like '10.*' -or $_ -like '192.168.*' -or $_ -match '^172\.(1[6-9]|2[0-9]|3[0-1])\.' })
+  $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { [string]$_.IPAddress } | Where-Object {
+    $_ -notmatch '^(127\\.|169\\.254\\.|0\\.|2(2[4-9]|[3-5][0-9])\\.|255\\.)'
+  })
+  $private = @($ips | Where-Object { $_ -like '10.*' -or $_ -like '192.168.*' -or $_ -match '^172\\.(1[6-9]|2[0-9]|3[0-1])\\.' })
   $result.localIp = [string](@($private + $ips | Select-Object -Unique | Select-Object -First 1))
 } catch {}
 
-try {
-  $client = New-Object System.Net.Sockets.TcpClient
-  $task = $client.ConnectAsync('1.1.1.1', 443)
-  $result.publicAccess = $task.Wait(2500) -and $client.Connected
-  $client.Dispose()
-} catch { $result.publicAccess = $false }
+try { $result.publicAccess = [bool](Test-NetConnection -ComputerName 172.64.36.1 -InformationLevel Quiet -ErrorAction Stop) }
+catch { $result.publicAccess = $false }
 
-$result | ConvertTo-Json -Depth 6 -Compress
+$json = $result | ConvertTo-Json -Depth 7 -Compress
+[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
 `
 
 export async function collectDeviceSecurityReport(): Promise<DeviceSecurityReport> {
@@ -220,7 +196,7 @@ export async function collectDeviceSecurityReport(): Promise<DeviceSecurityRepor
     const detail = error instanceof Error ? error.message : 'Windows 系统信息接口调用失败。'
     return buildReport({
       platformSupported: true,
-      password: { available: false, detail }, antivirus: { available: false, detail }, signatures: { available: false, detail }, firewall: { available: false, detail },
+      password: { available: false, detail }, bitlocker: { available: false, detail }, antivirus: { available: false, detail }, signatures: { available: false, detail }, firewall: { available: false, detail },
     })
   }
 }
