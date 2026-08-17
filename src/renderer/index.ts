@@ -10,7 +10,8 @@ type PublicTenant = {
   deviceName: string
   source: 'built-in' | 'custom'
 }
-type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean }
+type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean; floatWidth: number; floatHeight: number; lockStatusFloat: boolean }
+type PreferenceInput = Partial<Preferences> & { floatSizeSource?: 'width' | 'height' }
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
 type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; unknownCount: number; checkedAt: string; localIp: string; publicAccess: boolean; platformSupported: boolean }
@@ -28,7 +29,7 @@ interface Window {
     selectTenant(tenantId: string): Promise<PublicTenant>
     addTenant(tenant: TenantInput): Promise<PublicTenant>
     deleteTenant(tenantId: string): Promise<void>
-    savePreferences(preferences: Partial<Preferences>): Promise<Preferences>
+    savePreferences(preferences: PreferenceInput): Promise<Preferences>
     getStatus(): Promise<Status>
     login(): Promise<void>
     logout(): Promise<void>
@@ -67,6 +68,9 @@ const elements = {
   launchAtLogin: byId<HTMLInputElement>('launch-at-login'),
   loginMode: byId<HTMLSelectElement>('login-mode'),
   showStatusFloat: byId<HTMLInputElement>('show-status-float'),
+  floatWidth: byId<HTMLInputElement>('float-width'),
+  floatHeight: byId<HTMLInputElement>('float-height'),
+  lockStatusFloat: byId<HTMLInputElement>('lock-status-float'),
   requireWindowsHello: byId<HTMLInputElement>('require-windows-hello'),
   helloHelp: byId<HTMLElement>('hello-help'),
   settingsMessage: byId<HTMLElement>('settings-message'),
@@ -167,6 +171,12 @@ function renderPreferences(data: AppData): void {
   elements.launchAtLogin.checked = data.preferences.launchAtLogin
   elements.loginMode.value = data.preferences.loginMode
   elements.showStatusFloat.checked = data.preferences.showStatusFloat
+  elements.floatWidth.value = String(data.preferences.floatWidth)
+  elements.floatHeight.value = String(data.preferences.floatHeight)
+  elements.floatWidth.disabled = !data.preferences.showStatusFloat
+  elements.floatHeight.disabled = !data.preferences.showStatusFloat
+  elements.lockStatusFloat.checked = data.preferences.lockStatusFloat
+  elements.lockStatusFloat.disabled = !data.preferences.showStatusFloat
   elements.requireWindowsHello.checked = data.preferences.requireWindowsHello
   elements.requireWindowsHello.disabled = !data.helloAvailability.available
   elements.helloHelp.textContent = data.helloAvailability.available ? '开启后，授权每次网页登录前均需完成一次 Windows Hello 验证。' : data.helloAvailability.message
@@ -205,7 +215,7 @@ async function handleAddTenant(event: SubmitEvent): Promise<void> {
   finally { elements.saveTenant.disabled = false }
 }
 
-async function savePreferences(): Promise<void> {
+async function savePreferences(floatSizeSource?: 'width' | 'height'): Promise<void> {
   const previous = currentData?.preferences
   if (!previous) return
   setMessage(elements.settingsMessage, '正在保存设置…')
@@ -213,11 +223,13 @@ async function savePreferences(): Promise<void> {
     await window.cloudVerifyDevice.savePreferences({
       launchAtLogin: elements.launchAtLogin.checked, requireWindowsHello: elements.requireWindowsHello.checked,
       loginMode: elements.loginMode.value === 'browser' ? 'browser' : 'webview', showStatusFloat: elements.showStatusFloat.checked,
+      floatWidth: Number(elements.floatWidth.value), floatHeight: Number(elements.floatHeight.value), lockStatusFloat: elements.lockStatusFloat.checked, floatSizeSource,
     })
     await reload(); setMessage(elements.settingsMessage, '系统设置已保存。')
   } catch (error) {
     elements.launchAtLogin.checked = previous.launchAtLogin; elements.loginMode.value = previous.loginMode
-    elements.showStatusFloat.checked = previous.showStatusFloat; elements.requireWindowsHello.checked = previous.requireWindowsHello
+    elements.showStatusFloat.checked = previous.showStatusFloat; elements.floatWidth.value = String(previous.floatWidth); elements.floatHeight.value = String(previous.floatHeight)
+    elements.lockStatusFloat.checked = previous.lockStatusFloat; elements.requireWindowsHello.checked = previous.requireWindowsHello
     setMessage(elements.settingsMessage, error instanceof Error ? error.message : '系统设置未保存。', true)
   }
 }
@@ -264,6 +276,9 @@ function bindEvents(): void {
   elements.launchAtLogin.addEventListener('change', () => void savePreferences())
   elements.loginMode.addEventListener('change', () => void savePreferences())
   elements.showStatusFloat.addEventListener('change', () => void savePreferences())
+  elements.floatWidth.addEventListener('change', () => void savePreferences('width'))
+  elements.floatHeight.addEventListener('change', () => void savePreferences('height'))
+  elements.lockStatusFloat.addEventListener('change', () => void savePreferences())
   elements.requireWindowsHello.addEventListener('change', () => void savePreferences())
   elements.resetToDefaults.addEventListener('click', () => void handleResetToDefaults())
   elements.login.addEventListener('click', () => void handleLogin())

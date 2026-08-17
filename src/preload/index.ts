@@ -20,7 +20,11 @@ type Preferences = {
   requireWindowsHello: boolean
   loginMode: 'webview' | 'browser'
   showStatusFloat: boolean
+  floatWidth: number
+  floatHeight: number
+  lockStatusFloat: boolean
 }
+type PreferenceInput = Partial<Preferences> & { floatSizeSource?: 'width' | 'height' }
 
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
@@ -49,7 +53,7 @@ const api = {
   selectTenant: (tenantId: string): Promise<PublicTenant> => ipcRenderer.invoke('tenant:select', tenantId),
   addTenant: (tenant: TenantInput): Promise<PublicTenant> => ipcRenderer.invoke('tenant:add', tenant),
   deleteTenant: (tenantId: string): Promise<void> => ipcRenderer.invoke('tenant:delete', tenantId),
-  savePreferences: (preferences: Partial<Preferences>): Promise<Preferences> => ipcRenderer.invoke('preferences:save', preferences),
+  savePreferences: (preferences: PreferenceInput): Promise<Preferences> => ipcRenderer.invoke('preferences:save', preferences),
   getStatus: (): Promise<Status> => ipcRenderer.invoke('auth:status'),
   login: (): Promise<void> => ipcRenderer.invoke('auth:login'),
   logout: (): Promise<void> => ipcRenderer.invoke('auth:logout'),

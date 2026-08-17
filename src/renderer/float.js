@@ -14,14 +14,13 @@
     const domain = String(email || '').split('@')[1]?.trim().toLowerCase() || ''
     if (!domain) return '服务端未提供邮箱'
     if (personalDomains.has(domain)) return '个人用户'
-    if (domain.includes('devhjz')) return 'DevHjz'
-    return domain
+    return domain.replace(/devhjz/gi, 'DevHjz')
   }
 
   function riskCopy(report) {
     if (!report) return { text: '检查中', detail: '正在读取本机安全状态。', color: '#526f88' }
     if (!report.platformSupported) return { text: '暂不支持', detail: '设备安全态势仅在 Windows 设备上提供。', color: '#526f88' }
-    if (report.risk === 'pass') return { text: '通过检测', detail: '设备登录凭据、C 盘 BitLocker、杀毒软件、病毒库和防火墙均通过检测。', color: '#176b3e' }
+    if (report.risk === 'pass') return { text: '通过检测', detail: '设备登录凭据、C 盘 BitLocker、杀毒软件、病毒库和防火墙均通过检测。第三方杀毒软件的病毒库状态无法可靠读取时不计入风险。', color: '#176b3e' }
     if (report.risk === 'danger') return { text: '高危风险', detail: `发现 ${report.issueCount} 项明确的安全问题。`, color: '#a22f42' }
     if (report.issueCount > 0) return { text: '存在隐患', detail: `发现 ${report.issueCount} 项安全问题；${report.unknownCount || 0} 项状态需要重新检测。`, color: '#8a6116' }
     return { text: '检测异常', detail: `${report.unknownCount || 0} 项系统状态暂未读取成功，请刷新检测重试。`, color: '#8a6116' }
@@ -46,7 +45,7 @@
     elements.security.title = report ? report.checks.map((check) => `${check.title}：${check.detail}`).join('\n') : risk.detail
     elements.security.style.color = risk.color
     const signedIn = Boolean(status.signedIn)
-    elements.login.textContent = signedIn ? '⇤' : '⇥'
+    elements.login.classList.toggle('is-logout', signedIn)
     elements.login.title = signedIn ? '退出账户' : '登录账户'
     elements.login.setAttribute('aria-label', elements.login.title)
     elements.login.disabled = !signedIn && !status.configured

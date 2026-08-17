@@ -8,6 +8,10 @@ h1 { margin: 0; color: #224d72; font-size: 11px; letter-spacing: 0; line-height:
 .header-actions { display: flex; gap: 4px; -webkit-app-region: no-drag; }
 .icon-button { display: inline-grid; width: 25px; min-width: 25px; min-height: 25px; place-items: center; padding: 0; border: 1px solid #4d9bea; border-radius: 7px; color: #fff; background: #3388df; cursor: pointer; font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; font-size: 16px; font-weight: 700; line-height: 1; }
 .icon-button:hover { background: #2479ce; }
+.login-icon { position: relative; }
+.login-icon::before { content: ""; width: 10px; height: 14px; border: 1.6px solid currentColor; border-radius: 2px; }
+.login-icon::after { content: ""; position: absolute; width: 7px; height: 7px; border-top: 1.8px solid currentColor; border-right: 1.8px solid currentColor; transform: rotate(45deg); right: 4px; }
+.login-icon.is-logout::after { right: auto; left: 4px; transform: rotate(-135deg); }
 .icon-button.secondary { color: #2f699c; border-color: #a4cceb; background: rgba(255, 255, 255, .8); }
 .icon-button.secondary:hover { background: #fff; }
 .icon-button:disabled { cursor: not-allowed; opacity: .58; }

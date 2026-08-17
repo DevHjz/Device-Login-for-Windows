@@ -79,6 +79,8 @@
           <label class="toggle-row"><span><strong>开机自动启动</strong><small>Windows 登录后静默启动服务。使用 WebView 登录时会显示账户登录窗口，不会显示主窗口。</small></span><input id="launch-at-login" type="checkbox" role="switch" /></label>
           <label class="setting-row"><span><strong>账户登录方式</strong><small>默认使用应用内登录窗口；也可切换为系统默认浏览器。</small></span><select id="login-mode" aria-label="账户登录方式"><option value="webview">应用内登录窗口（推荐）</option><option value="browser">系统默认浏览器</option></select></label>
           <label class="toggle-row"><span><strong>显示设备态势悬浮窗</strong><small>在桌面右上角显示登录与安全认证状态；可手动移动和调整大小。</small></span><input id="show-status-float" type="checkbox" role="switch" /></label>
+          <div class="setting-row float-size-row"><span><strong>悬浮窗尺寸</strong><small>输入宽度或高度后会自动按固定比例换算另一项。</small></span><div class="float-size-controls" aria-label="悬浮窗尺寸"><label>宽 <input id="float-width" type="number" min="193" max="720" step="1" inputmode="numeric" /> px</label><span aria-hidden="true">×</span><label>高 <input id="float-height" type="number" min="185" max="692" step="1" inputmode="numeric" /> px</label></div></div>
+          <label class="toggle-row"><span><strong>锁定悬浮窗</strong><small>锁定后不能拖动或调整悬浮窗大小；已保存的位置和尺寸保持不变。</small></span><input id="lock-status-float" type="checkbox" role="switch" /></label>
           <label class="toggle-row"><span><strong>授权登录时要求 Windows Hello</strong><small id="hello-help">正在检查 Windows Hello 状态…</small></span><input id="require-windows-hello" type="checkbox" role="switch" /></label>
         </div>
         <div class="settings-actions"><button id="reset-to-defaults" class="button button-ghost button-danger-text" type="button">重置为默认状态</button></div>

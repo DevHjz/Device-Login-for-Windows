@@ -28,7 +28,7 @@ type RawSecurityData = {
   password?: CheckValue
   bitlocker?: CheckValue & { volumeStatus?: string; protectionStatus?: string; encryptionPercentage?: number }
   antivirus?: CheckValue & { names?: string[] }
-  signatures?: CheckValue & { ageDays?: number }
+  signatures?: CheckValue & { ageDays?: number; ignored?: boolean }
   firewall?: CheckValue
   localIp?: string
   publicAccess?: boolean
@@ -82,8 +82,10 @@ function buildReport(data: RawSecurityData, platformSupported = true): DeviceSec
       detail: detailFor(data.antivirus, `已启用：${antivirusNames.join('、') || '已注册的安全产品'}。`, '未检测到已启用的杀毒软件。', '未能读取 Windows 安全中心的杀毒软件状态。'),
     },
     {
-      id: 'signatures', title: '病毒库', state: stateFrom(data.signatures),
-      detail: detailFor(data.signatures, `病毒库状态正常${signatureAge !== undefined ? `（最近更新约 ${signatureAge} 天前）` : ''}。`, `病毒库已过期或需要更新${signatureAge !== undefined ? `（最近更新约 ${signatureAge} 天前）` : ''}。`, '未能读取当前安全产品的病毒库状态。'),
+      id: 'signatures', title: '病毒库', state: data.signatures?.ignored === true ? 'pass' : stateFrom(data.signatures),
+      detail: data.signatures?.ignored === true
+        ? asText(data.signatures.detail) || '已启用第三方杀毒软件，Windows 无法可靠读取其病毒库状态；该项不计入安全风险。'
+        : detailFor(data.signatures, `病毒库状态正常${signatureAge !== undefined ? `（最近更新约 ${signatureAge} 天前）` : ''}。`, `病毒库已过期或需要更新${signatureAge !== undefined ? `（最近更新约 ${signatureAge} 天前）` : ''}。`, '未能读取当前安全产品的病毒库状态。'),
     },
     {
       id: 'firewall', title: 'Windows 防火墙', state: stateFrom(data.firewall),
@@ -107,7 +109,7 @@ $result = [ordered]@{
   password = New-Check
   bitlocker = [ordered]@{ available = $false; value = $null; detail = ''; volumeStatus = ''; protectionStatus = ''; encryptionPercentage = $null }
   antivirus = [ordered]@{ available = $false; value = $null; detail = ''; names = @() }
-  signatures = [ordered]@{ available = $false; value = $null; detail = ''; ageDays = $null }
+  signatures = [ordered]@{ available = $false; value = $null; detail = ''; ageDays = $null; ignored = $false }
   firewall = New-Check
   localIp = ''
   publicAccess = $false
@@ -139,10 +141,17 @@ try {
   $result.antivirus.names = @($products | ForEach-Object { [string]$_.displayName } | Where-Object { $_ })
   $productStates = @($products | ForEach-Object {
     $hex = ('{0:X6}' -f [int]$_.productState)
-    [ordered]@{ realTime = [Convert]::ToInt32($hex.Substring(2, 2), 16); signatures = [Convert]::ToInt32($hex.Substring(4, 2), 16) }
+    [ordered]@{ name = [string]$_.displayName; realTime = [Convert]::ToInt32($hex.Substring(2, 2), 16); signatures = [Convert]::ToInt32($hex.Substring(4, 2), 16) }
   })
-  $result.antivirus.value = (@($productStates | Where-Object { $_.realTime -eq 0x10 }).Count -gt 0)
-  if ($productStates.Count -gt 0) {
+  $enabledProducts = @($productStates | Where-Object { $_.realTime -eq 0x10 })
+  $result.antivirus.value = ($enabledProducts.Count -gt 0)
+  $enabledThirdParty = @($enabledProducts | Where-Object { $_.name -notmatch '^(Microsoft|Windows) Defender( Antivirus)?$' })
+  if ($enabledThirdParty.Count -gt 0) {
+    $result.signatures.available = $true
+    $result.signatures.value = $true
+    $result.signatures.ignored = $true
+    $result.signatures.detail = '已启用第三方杀毒软件，Windows 无法可靠读取其病毒库状态；该项不计入安全风险。'
+  } elseif ($productStates.Count -gt 0) {
     $result.signatures.available = $true
     $result.signatures.value = (@($productStates | Where-Object { $_.signatures -ne 0x00 }).Count -eq 0)
   }
@@ -155,11 +164,13 @@ try {
     $result.antivirus.available = $true
     $result.antivirus.value = [bool]$mp.AntivirusEnabled
     if (@($result.antivirus.names).Count -eq 0) { $result.antivirus.names = @('Microsoft Defender') }
-    $lastUpdated = [datetime]$mp.AntivirusSignatureLastUpdated
-    $age = [math]::Max(0, [math]::Floor(((Get-Date) - $lastUpdated).TotalDays))
-    $result.signatures.available = $true
-    $result.signatures.ageDays = [int]$age
-    $result.signatures.value = ($lastUpdated -gt [datetime]::MinValue -and $age -le 7)
+    if (-not [bool]$result.signatures.ignored) {
+      $lastUpdated = [datetime]$mp.AntivirusSignatureLastUpdated
+      $age = [math]::Max(0, [math]::Floor(((Get-Date) - $lastUpdated).TotalDays))
+      $result.signatures.available = $true
+      $result.signatures.ageDays = [int]$age
+      $result.signatures.value = ($lastUpdated -gt [datetime]::MinValue -and $age -le 7)
+    }
   }
 } catch {}
 
