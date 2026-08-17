@@ -15,7 +15,7 @@
           <div>
             <p class="eyebrow">CLOUD VERIFY DEVICE AUTH</p>
             <h1>云端验证设备认证服务</h1>
-            <p class="subtitle">在 Windows 设备上安全确认网页登录请求。</p>
+            <p class="subtitle">在 Windows 设备上安全认证并确认网页登录请求。</p>
           </div>
         </div>
         <button id="open-settings" class="button button-ghost" type="button">系统设置</button>
@@ -23,30 +23,20 @@
 
       <section class="card tenant-card">
         <div class="section-heading">
-          <div>
-            <p class="section-label">当前租户</p>
-            <h2>选择服务组织</h2>
-          </div>
+          <div><p class="section-label">当前租户</p><h2>选择服务组织</h2></div>
           <div class="inline-actions">
             <button id="add-tenant" class="button button-secondary" type="button">添加租户</button>
             <button id="delete-tenant" class="button button-ghost button-danger-text" type="button">删除</button>
           </div>
         </div>
         <div class="tenant-row">
-          <label class="tenant-select-label" for="tenant-select">
-            <span>租户</span>
-            <select id="tenant-select" aria-label="选择租户"></select>
-          </label>
-          <p id="tenant-secret-state" class="subtle">正在读取租户信息…</p>
+          <label class="tenant-select-label" for="tenant-select"><span>租户</span><select id="tenant-select" aria-label="选择租户"></select></label>
         </div>
       </section>
 
       <section class="card status-card" aria-live="polite">
         <div class="status-header">
-          <div>
-            <p class="section-label">设备状态</p>
-            <h2 id="status-title">正在读取设备状态…</h2>
-          </div>
+          <div><p class="section-label">设备状态</p><h2 id="status-title">正在读取设备状态…</h2></div>
           <span id="status-badge" class="badge badge-neutral">检查中</span>
         </div>
         <p id="status-detail" class="status-detail">请稍候。</p>
@@ -58,31 +48,27 @@
         <p id="status-error" class="error-banner" hidden></p>
         <div class="action-row">
           <button id="login-button" class="button button-primary" type="button">登录账户</button>
-          <button id="logout-button" class="button button-danger" type="button" hidden>退出并停止设备登录</button>
+          <button id="logout-button" class="button button-danger" type="button" hidden>退出并停止设备认证</button>
         </div>
       </section>
 
-      <section class="card posture-card" aria-live="polite">
+      <section class="card security-card" aria-live="polite">
         <div class="status-header">
-          <div>
-            <p class="section-label">设备安全态势</p>
-            <h2>本机安全检查</h2>
-          </div>
-          <span id="security-badge" class="badge badge-neutral">检查中</span>
+          <div><p class="section-label">设备安全态势</p><h2 id="security-title">正在进行安全检查…</h2></div>
+          <button id="refresh-security" class="button button-ghost" type="button">刷新检测</button>
         </div>
-        <p id="security-summary" class="status-detail">正在读取本机安全状态…</p>
-        <div id="security-checks" class="security-checks"></div>
-        <p id="security-updated-at" class="subtle">尚未完成检查</p>
-        <div class="action-row"><button id="refresh-status" class="button button-secondary" type="button">刷新检测</button></div>
+        <p id="security-summary" class="status-detail">将检查设备登录凭据、杀毒软件、病毒库和 Windows 防火墙。本功能仅展示状态，不修改系统设置。</p>
+        <div id="security-list" class="security-list" aria-label="设备安全检查明细"></div>
+        <p id="security-checked-at" class="subtle">正在读取检测时间…</p>
       </section>
 
       <section class="card guide-card">
         <p class="section-label">使用方式</p>
-        <h2>保持设备服务运行</h2>
-        <p>完成账户登录后，本应用会在本机安全启动设备服务。网页请求登录时，Windows 通知中心将显示“授权登录”和“拒绝”按钮。若启用 Windows Hello，授权前还需要完成一次系统验证。</p>
+        <h2>保持设备认证服务运行</h2>
+        <p>完成账户登录后，本应用会在本机安全启动设备认证服务。网页请求登录时，Windows 通知中心将显示“授权登录”和“拒绝”按钮。若启用 Windows Hello，授权前还需要完成一次系统验证。</p>
         <div class="guide-grid">
           <div><span class="guide-number">01</span><strong>选择租户</strong><p>切换租户会自动退出当前账户，保护组织间的身份信息。</p></div>
-          <div><span class="guide-number">02</span><strong>完成登录</strong><p>根据系统设置，使用内置登录窗口或系统浏览器完成安全登录。</p></div>
+          <div><span class="guide-number">02</span><strong>完成登录</strong><p>应用会按所选登录方式使用 PKCE 完成安全登录。</p></div>
           <div><span class="guide-number">03</span><strong>通知确认</strong><p>在 Windows 通知中心授权或拒绝每一次网页登录请求。</p></div>
         </div>
       </section>
@@ -90,19 +76,17 @@
       <section id="system-settings" class="card settings-card" hidden>
         <div class="settings-heading"><div><p class="section-label">系统设置</p><h2>设备保护选项</h2></div><p class="security-note">设置更改会立即保存到当前 Windows 用户。启用或关闭 Windows Hello 时必须完成一次验证。</p></div>
         <div class="preference-list">
-          <label class="select-row"><span><strong>账户登录方式</strong><small>优先使用内置登录窗口；也可以切换为系统默认浏览器。</small></span><select id="login-mode"><option value="webview">内置登录窗口（推荐）</option><option value="browser">系统默认浏览器</option></select></label>
-          <label class="toggle-row"><span><strong>开机自动启动</strong><small>Windows 登录后静默启动认证服务。</small></span><input id="launch-at-login" type="checkbox" role="switch" /></label>
-          <label class="toggle-row"><span><strong>批准登录时要求 Windows Hello</strong><small id="hello-help">正在检查 Windows Hello 状态…</small></span><input id="require-windows-hello" type="checkbox" role="switch" /></label>
-          <label class="toggle-row"><span><strong>显示设备态势悬浮窗</strong><small>在桌面右上角展示登录与安全状态，可拖动和调整大小。</small></span><input id="show-status-float" type="checkbox" role="switch" /></label>
+          <label class="toggle-row"><span><strong>开机自动启动</strong><small>Windows 登录后静默启动服务。使用 WebView 登录时会显示账户登录窗口，不会显示主窗口。</small></span><input id="launch-at-login" type="checkbox" role="switch" /></label>
+          <label class="setting-row"><span><strong>账户登录方式</strong><small>默认使用应用内登录窗口；也可切换为系统默认浏览器。</small></span><select id="login-mode" aria-label="账户登录方式"><option value="webview">应用内登录窗口（推荐）</option><option value="browser">系统默认浏览器</option></select></label>
+          <label class="toggle-row"><span><strong>显示设备态势悬浮窗</strong><small>在桌面右上角显示登录与安全认证状态；可手动移动和调整大小。</small></span><input id="show-status-float" type="checkbox" role="switch" /></label>
+          <label class="toggle-row"><span><strong>授权登录时要求 Windows Hello</strong><small id="hello-help">正在检查 Windows Hello 状态…</small></span><input id="require-windows-hello" type="checkbox" role="switch" /></label>
         </div>
-        <div class="settings-reset"><div><strong>恢复默认设置</strong><small>用于处理旧版本遗留的本机配置异常；将清除本机账户、租户添加记录和系统偏好。</small></div><button id="reset-defaults" class="button button-ghost button-danger-text" type="button">恢复默认设置</button></div>
         <p id="settings-message" class="form-message" role="status"></p>
       </section>
 
       <section id="tenant-editor" class="card settings-card" hidden>
-        <div class="settings-heading"><div><p class="section-label">租户管理</p><h2 id="tenant-editor-title">添加租户</h2></div><button id="cancel-tenant-edit" class="button button-ghost" type="button">取消</button></div>
+        <div class="settings-heading"><div><p class="section-label">租户管理</p><h2>添加租户</h2></div><button id="cancel-tenant-edit" class="button button-ghost" type="button">取消</button></div>
         <form id="tenant-form" novalidate>
-          <input id="tenant-id" type="hidden" />
           <div class="form-grid">
             <label><span>租户显示名称</span><input id="tenant-display-name" type="text" required maxlength="80" autocomplete="organization" /></label>
             <label><span>服务地址</span><input id="tenant-endpoint" type="url" required autocomplete="url" /></label>
@@ -110,11 +94,10 @@
             <label><span>组织</span><input id="tenant-org-name" type="text" required autocomplete="organization" /></label>
             <label><span>应用名称</span><input id="tenant-app-name" type="text" required autocomplete="off" /></label>
             <label><span>设备显示名称（可选）</span><input id="tenant-device-name" type="text" maxlength="128" autocomplete="off" /></label>
-            <label><span>认证密钥</span><input id="tenant-client-secret" type="password" autocomplete="new-password" placeholder="保存后不会再次显示" /></label>
           </div>
           <label><span>应用证书（X.509 PEM）</span><textarea id="tenant-certificate" rows="8" required spellcheck="false"></textarea></label>
           <label><span>额外允许的网页地址（每行一个 HTTPS 地址，可选）</span><textarea id="tenant-allowed-origins" rows="3" placeholder="https://portal.example.com"></textarea><small>仅添加完全信任且需要调用本机设备服务的网页地址。</small></label>
-          <div class="form-actions"><button id="save-tenant" class="button button-primary" type="submit">安全保存租户</button><span id="tenant-form-message" class="form-message" role="status"></span></div>
+          <div class="form-actions"><button id="save-tenant" class="button button-primary" type="submit">添加租户</button><span id="tenant-form-message" class="form-message" role="status"></span></div>
         </form>
       </section>
     </main>

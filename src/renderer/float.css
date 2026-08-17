@@ -1,22 +1,23 @@
-:root { color-scheme: light; font-family: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif; color: #273646; background: transparent; }
+:root { color-scheme: light; font-family: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif; color: #173b5d; }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 280px; min-height: 230px; background: rgba(237, 241, 245, .93); }
-.float-card { min-height: 100vh; padding: 14px; border: 1px solid rgba(132, 150, 167, .52); border-radius: 13px; background: rgba(239, 243, 247, .92); box-shadow: 0 7px 24px rgba(36, 53, 68, .18); }
-.float-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(166, 181, 195, .58); -webkit-app-region: drag; user-select: none; }
-h1 { margin: 0; color: #2b4053; font-size: 15px; letter-spacing: .02em; }
-.risk { border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.risk-pass { color: #16693b; background: #d8f0e2; }
-.risk-warning { color: #8e6215; background: #fff0c8; }
-.risk-danger { color: #a33242; background: #ffe1e6; }
-.risk-neutral { color: #52677c; background: #e2e9ef; }
-.float-details { display: grid; gap: 8px; padding: 12px 0; }
-.float-details > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; align-items: baseline; }
-.float-details span { color: #64778a; font-size: 12px; }
-.float-details strong { min-width: 0; overflow: hidden; color: #2c4054; font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
-.security-row strong { font-weight: 800; }
-.float-actions { display: flex; gap: 8px; }
-button { -webkit-app-region: no-drag; min-height: 29px; flex: 1; border: 1px solid #4c8de1; border-radius: 7px; color: #fff; background: #4c8de1; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-button:hover { background: #397bcf; }
-button.secondary { color: #376a99; border-color: #b8cee2; background: rgba(255, 255, 255, .7); }
+html, body { width: 100%; min-width: 0; min-height: 0; margin: 0; background: transparent; }
+.float-card { min-width: 280px; min-height: 230px; margin: 0; padding: 16px; border: 1px solid rgba(132, 190, 239, .82); border-radius: 18px; background: rgba(222, 243, 255, .86); box-shadow: 0 14px 34px rgba(25, 82, 128, .24); backdrop-filter: blur(12px); }
+.float-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 2px 2px 12px; cursor: move; -webkit-app-region: drag; user-select: none; }
+.float-header p { margin: 0 0 3px; color: #4e83ad; font-size: 10px; font-weight: 800; letter-spacing: .11em; }
+h1 { margin: 0; color: #224d72; font-size: 15px; letter-spacing: .02em; }
+.risk { display: inline-flex; align-items: center; min-height: 25px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.risk-neutral { color: #526f88; background: rgba(237, 246, 253, .92); }
+.risk-pass { color: #176b3e; background: rgba(213, 245, 224, .95); }
+.risk-warning { color: #8a6116; background: rgba(255, 239, 192, .94); }
+.risk-danger { color: #a22f42; background: rgba(255, 221, 226, .94); }
+.float-details { display: grid; gap: 7px; }
+.float-details > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 28px; padding: 6px 8px; border-radius: 9px; background: rgba(255, 255, 255, .52); }
+.float-details span { color: #5680a3; font-size: 12px; }
+.float-details strong { overflow: hidden; color: #254d6d; font-size: 12px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.float-details .security-row { border: 1px solid rgba(131, 185, 227, .36); background: rgba(245, 251, 255, .72); }
+.float-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 13px; -webkit-app-region: no-drag; }
+button { min-height: 33px; border: 1px solid #4d9bea; border-radius: 9px; color: #fff; background: #3388df; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; }
+button:hover { background: #2479ce; }
+button.secondary { color: #2f699c; border-color: #a4cceb; background: rgba(255, 255, 255, .8); }
 button.secondary:hover { background: #fff; }
-button:disabled { opacity: .55; cursor: not-allowed; }
+button:disabled { cursor: not-allowed; opacity: .58; }

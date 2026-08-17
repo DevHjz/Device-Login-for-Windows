@@ -7,32 +7,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      validate_sensitive_secrets:
-        description: 'Validate that tenant client-secret placeholders exist in GitHub Secrets (values are never written to files or artifacts)'
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
 
 jobs:
-  validate-sensitive-secrets:
-    name: Validate protected secret placeholders
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.validate_sensitive_secrets }}
-    env:
-      TENANT_HUANGFA_CLIENT_SECRET: ${{ secrets.TENANT_HUANGFA_CLIENT_SECRET }}
-      TENANT_PUBLIC_IAM_CLIENT_SECRET: ${{ secrets.TENANT_PUBLIC_IAM_CLIENT_SECRET }}
-    steps:
-      - name: Confirm secrets are configured without revealing values
-        shell: bash
-        run: |
-          test -n "$TENANT_HUANGFA_CLIENT_SECRET" || { echo 'Missing TENANT_HUANGFA_CLIENT_SECRET'; exit 1; }
-          test -n "$TENANT_PUBLIC_IAM_CLIENT_SECRET" || { echo 'Missing TENANT_PUBLIC_IAM_CLIENT_SECRET'; exit 1; }
-          echo 'Protected secret placeholders are configured. No secret is written to the workspace or release artifact.'
-
   build:
     name: Build Windows ${{ matrix.arch }}
     runs-on: windows-latest
@@ -58,12 +37,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify source and Native SSO protocol
+      - name: Verify public-client source and Native SSO protocol
         run: |
           pnpm run check
           pnpm run build
           pnpm run verify:native-sso
           pnpm run verify:windows-shell
+          pnpm run verify:device-security
+          node scripts/verify-public-client.cjs
           node scripts/verify-release-config.cjs
 
       - name: Build installer

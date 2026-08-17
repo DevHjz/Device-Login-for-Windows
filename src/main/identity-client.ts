@@ -3,7 +3,6 @@ import * as crypto from 'node:crypto'
 export type IdentityClientOptions = {
   endpoint: string
   clientId: string
-  clientSecret: string
   certificate: string
 }
 
@@ -26,15 +25,21 @@ function decodeBase64Url(value: string): Buffer {
 export class IdentityClient {
   constructor(private readonly options: IdentityClientOptions) {}
 
-  public async getAuthToken(code: string): Promise<AuthTokens> {
+  /**
+   * Public native-client authorization-code exchange. The per-login PKCE
+   * verifier proves possession of the original authorization request without
+   * embedding a shared client secret in the desktop application.
+   */
+  public async getAuthToken(code: string, codeVerifier: string): Promise<AuthTokens> {
+    if (!codeVerifier) throw new Error('登录验证信息已失效，请返回应用后重新登录。')
     const response = await fetch(new URL('/api/login/oauth/access_token', this.options.endpoint), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client_id: this.options.clientId,
-        client_secret: this.options.clientSecret,
         grant_type: 'authorization_code',
         code,
+        code_verifier: codeVerifier,
       }),
     })
     const payload = await response.json() as AuthTokens & { error?: string; error_description?: string; msg?: string }
