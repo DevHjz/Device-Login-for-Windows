@@ -94,7 +94,8 @@ function buildReport(data: RawSecurityData, platformSupported = true): DeviceSec
   ]
   const issueCount = checks.filter((check) => check.state === 'warning').length
   const unknownCount = checks.filter((check) => check.state === 'unknown').length
-  const risk = issueCount === 0 && unknownCount === 0 ? 'pass' : issueCount > 2 ? 'danger' : 'warning'
+  // 系统接口暂未返回的项目仅供详情展示，不应被当作设备风险或向用户显示为检测异常。
+  const risk = issueCount === 0 ? 'pass' : issueCount > 2 ? 'danger' : 'warning'
   return {
     checks, risk, issueCount, unknownCount, checkedAt: new Date().toISOString(), localIp: asText(data.localIp) || '未获取到', publicAccess: data.publicAccess === true,
     platformSupported: data.platformSupported !== false && platformSupported,

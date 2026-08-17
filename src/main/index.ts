@@ -22,10 +22,10 @@ const TENANT_STORE_FILE = 'tenants.json'
 const SESSION_FILE = 'session.json'
 const STATUS_FLOAT_BOUNDS_FILE = 'status-float-bounds.json'
 const SECURITY_REFRESH_INTERVAL = 30 * 60 * 1000
-const STATUS_FLOAT_DEFAULT_WIDTH = 204
-const STATUS_FLOAT_DEFAULT_HEIGHT = 196
+const STATUS_FLOAT_DEFAULT_WIDTH = 200
+const STATUS_FLOAT_DEFAULT_HEIGHT = 210
 const STATUS_FLOAT_ASPECT_RATIO = STATUS_FLOAT_DEFAULT_WIDTH / STATUS_FLOAT_DEFAULT_HEIGHT
-const STATUS_FLOAT_MIN_HEIGHT = 185
+const STATUS_FLOAT_MIN_HEIGHT = 180
 const STATUS_FLOAT_MIN_WIDTH = Math.ceil(STATUS_FLOAT_MIN_HEIGHT * STATUS_FLOAT_ASPECT_RATIO)
 const STATUS_FLOAT_MAX_WIDTH = 720
 
@@ -34,7 +34,7 @@ type StatusFloatBounds = { x: number; y: number; width: number; height: number }
 type StatusFloatSizeSource = 'width' | 'height'
 type Tenant = TenantPreset & { createdAt: string; updatedAt: string; source: 'built-in' | 'custom' }
 type TenantInput = { displayName?: string; endpoint?: string; clientId?: string; orgName?: string; appName?: string; certificate?: string; allowedOrigins?: unknown; deviceName?: string }
-type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: LoginMode; showStatusFloat: boolean; floatWidth: number; floatHeight: number; lockStatusFloat: boolean }
+type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: LoginMode; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean }
 type PreferenceInput = Partial<Preferences> & { floatSizeSource?: StatusFloatSizeSource }
 type TenantStore = { activeTenantId: string; customTenants: Tenant[]; deletedBuiltInTenantIds: string[]; preferences: Preferences }
 type StoredSession = { tenantId: string; accessTokenEncrypted: string; refreshTokenEncrypted?: string; deviceSecretEncrypted?: string; userName: string; displayName: string; email?: string; emailLookupAttempted?: boolean; avatar: string; expiresAt?: number; bootMarker: string }
@@ -112,7 +112,12 @@ function statusFloatSizeFromPreferences(preferences: Pick<Preferences, 'floatWid
   const width = normalizeStatusFloatWidth(preferences.floatWidth)
   return { width, height: statusFloatHeightForWidth(width) }
 }
-function defaultPreferences(): Preferences { return { launchAtLogin: false, requireWindowsHello: false, loginMode: 'webview', showStatusFloat: true, floatWidth: STATUS_FLOAT_DEFAULT_WIDTH, floatHeight: STATUS_FLOAT_DEFAULT_HEIGHT, lockStatusFloat: false } }
+function normalizeStatusFloatOpacity(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric)) return 88
+  return Math.min(100, Math.max(35, Math.round(numeric)))
+}
+function defaultPreferences(): Preferences { return { launchAtLogin: false, requireWindowsHello: false, loginMode: 'webview', showStatusFloat: true, floatWidth: STATUS_FLOAT_DEFAULT_WIDTH, floatHeight: STATUS_FLOAT_DEFAULT_HEIGHT, floatOpacity: 88, lockStatusFloat: false } }
 function defaultStore(): TenantStore { return { activeTenantId: BUILT_IN_TENANTS[0].id, customTenants: [], deletedBuiltInTenantIds: [], preferences: defaultPreferences() } }
 function cleanTenant(raw: unknown): Tenant | null {
   if (!raw || typeof raw !== 'object') return null
@@ -137,7 +142,7 @@ async function getStore(): Promise<TenantStore> {
     preferences: {
       launchAtLogin: Boolean(rawPreferences.launchAtLogin), requireWindowsHello: Boolean(rawPreferences.requireWindowsHello),
       loginMode: rawPreferences.loginMode === 'browser' ? 'browser' : 'webview', showStatusFloat: rawPreferences.showStatusFloat !== false,
-      floatWidth: normalizeStatusFloatWidth(rawPreferences.floatWidth), floatHeight: statusFloatHeightForWidth(normalizeStatusFloatWidth(rawPreferences.floatWidth)), lockStatusFloat: Boolean(rawPreferences.lockStatusFloat),
+      floatWidth: normalizeStatusFloatWidth(rawPreferences.floatWidth), floatHeight: statusFloatHeightForWidth(normalizeStatusFloatWidth(rawPreferences.floatWidth)), floatOpacity: normalizeStatusFloatOpacity(rawPreferences.floatOpacity), lockStatusFloat: Boolean(rawPreferences.lockStatusFloat),
     },
   }
   // 3.0 不再支持编辑内置租户，也不保留历史共享密钥字段。
@@ -355,6 +360,7 @@ function applyStatusFloatPreferences(window: BrowserWindow, preferences: Prefere
   window.setMinimumSize(STATUS_FLOAT_MIN_WIDTH, STATUS_FLOAT_MIN_HEIGHT)
   window.setAspectRatio(STATUS_FLOAT_ASPECT_RATIO)
   if (window.getBounds().width !== size.width || window.getBounds().height !== size.height) window.setSize(size.width, size.height)
+  window.setOpacity(preferences.floatOpacity / 100)
   window.setMovable(!preferences.lockStatusFloat)
   window.setResizable(!preferences.lockStatusFloat)
 }
@@ -387,13 +393,11 @@ async function setStatusFloatVisible(visible: boolean): Promise<void> {
     statusFloatWindow.setVisibleOnAllWorkspaces(false)
     const persist = (): void => { if (statusFloatBoundsSaveTimer) clearTimeout(statusFloatBoundsSaveTimer); statusFloatBoundsSaveTimer = setTimeout(() => { void saveStatusFloatBounds() }, 400) }
     statusFloatWindow.on('move', persist); statusFloatWindow.on('resize', persist)
-    statusFloatWindow.on('show', reassertStatusFloatDesktopLayer); statusFloatWindow.on('restore', reassertStatusFloatDesktopLayer)
-    statusFloatWindow.hookWindowMessage(0x0018, () => { setTimeout(reassertStatusFloatDesktopLayer, 0) }) // WM_SHOWWINDOW：包括桌面显示状态切换。
     statusFloatWindow.on('closed', () => { statusFloatWindow = null })
     await statusFloatWindow.loadFile(path.join(__dirname, '../renderer/float.html'))
   }
   applyStatusFloatPreferences(statusFloatWindow, store.preferences)
-  statusFloatWindow.showInactive(); reassertStatusFloatDesktopLayer(); void getStatus().then((status) => statusFloatWindow?.webContents.send('status:changed', status))
+  statusFloatWindow.showInactive(); void getStatus().then((status) => statusFloatWindow?.webContents.send('status:changed', status))
 }
 function createTray(): void {
   tray = new Tray(iconPath()); tray.setToolTip(PRODUCT_NAME)
@@ -450,7 +454,7 @@ function registerIpc(): void {
     store.preferences = {
       launchAtLogin: input.launchAtLogin === undefined ? store.preferences.launchAtLogin : Boolean(input.launchAtLogin), requireWindowsHello: nextHello,
       loginMode: input.loginMode === 'browser' ? 'browser' : 'webview', showStatusFloat: input.showStatusFloat === undefined ? store.preferences.showStatusFloat : Boolean(input.showStatusFloat),
-      floatWidth, floatHeight: statusFloatHeightForWidth(floatWidth), lockStatusFloat: input.lockStatusFloat === undefined ? store.preferences.lockStatusFloat : Boolean(input.lockStatusFloat),
+      floatWidth, floatHeight: statusFloatHeightForWidth(floatWidth), floatOpacity: input.floatOpacity === undefined ? store.preferences.floatOpacity : normalizeStatusFloatOpacity(input.floatOpacity), lockStatusFloat: input.lockStatusFloat === undefined ? store.preferences.lockStatusFloat : Boolean(input.lockStatusFloat),
     }
     applyLaunchAtLogin(store.preferences.launchAtLogin); await writeJson(TENANT_STORE_FILE, store); await setStatusFloatVisible(store.preferences.showStatusFloat); publishStatus(); return store.preferences
   })

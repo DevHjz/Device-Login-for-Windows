@@ -22,6 +22,7 @@ type Preferences = {
   showStatusFloat: boolean
   floatWidth: number
   floatHeight: number
+  floatOpacity: number
   lockStatusFloat: boolean
 }
 type PreferenceInput = Partial<Preferences> & { floatSizeSource?: 'width' | 'height' }

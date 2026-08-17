@@ -10,7 +10,7 @@ type PublicTenant = {
   deviceName: string
   source: 'built-in' | 'custom'
 }
-type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean; floatWidth: number; floatHeight: number; lockStatusFloat: boolean }
+type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean }
 type PreferenceInput = Partial<Preferences> & { floatSizeSource?: 'width' | 'height' }
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
@@ -70,6 +70,8 @@ const elements = {
   showStatusFloat: byId<HTMLInputElement>('show-status-float'),
   floatWidth: byId<HTMLInputElement>('float-width'),
   floatHeight: byId<HTMLInputElement>('float-height'),
+  floatOpacity: byId<HTMLInputElement>('float-opacity'),
+  floatOpacityValue: byId<HTMLOutputElement>('float-opacity-value'),
   lockStatusFloat: byId<HTMLInputElement>('lock-status-float'),
   requireWindowsHello: byId<HTMLInputElement>('require-windows-hello'),
   helloHelp: byId<HTMLElement>('hello-help'),
@@ -128,11 +130,9 @@ function renderStatus(status: Status): void {
 
 function riskText(report: DeviceSecurityReport): { title: string; summary: string } {
   if (!report.platformSupported) return { title: '当前环境暂不支持检测', summary: '设备安全态势仅在 Windows 设备上提供。' }
-  if (report.risk === 'pass') return { title: '通过检测', summary: '设备登录凭据、C 盘 BitLocker、杀毒软件、病毒库和防火墙均通过检测。' }
+  if (report.issueCount === 0) return { title: '通过检测', summary: '未发现需要处理的安全风险。系统暂未返回的检查项目不会计入风险。' }
   if (report.risk === 'danger') return { title: '高危风险', summary: `发现 ${report.issueCount} 项明确的安全问题，请尽快检查设备设置。` }
-  if (report.issueCount > 0 && report.unknownCount > 0) return { title: '存在隐患', summary: `发现 ${report.issueCount} 项安全问题；另有 ${report.unknownCount} 项状态需要重新检测。` }
-  if (report.issueCount > 0) return { title: '存在隐患', summary: `发现 ${report.issueCount} 项需要处理的安全问题。` }
-  return { title: '检测异常', summary: `${report.unknownCount} 项系统状态暂未读取成功，请点击“刷新检测”重试。` }
+  return { title: '存在隐患', summary: `发现 ${report.issueCount} 项需要处理的安全问题。` }
 }
 
 function renderSecurity(report?: DeviceSecurityReport): void {
@@ -155,7 +155,7 @@ function renderSecurity(report?: DeviceSecurityReport): void {
     return card
   }))
   const checked = new Date(report.checkedAt)
-  elements.securityCheckedAt.textContent = `最近检测：${Number.isNaN(checked.getTime()) ? '刚刚' : checked.toLocaleString('zh-CN')} · 局域网 IP：${report.localIp}${report.publicAccess ? '（公网接入）' : ''}`
+  elements.securityCheckedAt.textContent = `最近检测：${Number.isNaN(checked.getTime()) ? '刚刚' : checked.toLocaleString('zh-CN')} · 局域网 IP：${report.localIp}${report.publicAccess ? '（公网）' : ''}`
 }
 
 function renderTenants(data: AppData): void {
@@ -173,8 +173,12 @@ function renderPreferences(data: AppData): void {
   elements.showStatusFloat.checked = data.preferences.showStatusFloat
   elements.floatWidth.value = String(data.preferences.floatWidth)
   elements.floatHeight.value = String(data.preferences.floatHeight)
+  elements.floatOpacity.value = String(data.preferences.floatOpacity)
+  elements.floatOpacityValue.value = `${data.preferences.floatOpacity}%`
+  elements.floatOpacityValue.textContent = `${data.preferences.floatOpacity}%`
   elements.floatWidth.disabled = !data.preferences.showStatusFloat
   elements.floatHeight.disabled = !data.preferences.showStatusFloat
+  elements.floatOpacity.disabled = !data.preferences.showStatusFloat
   elements.lockStatusFloat.checked = data.preferences.lockStatusFloat
   elements.lockStatusFloat.disabled = !data.preferences.showStatusFloat
   elements.requireWindowsHello.checked = data.preferences.requireWindowsHello
@@ -223,12 +227,13 @@ async function savePreferences(floatSizeSource?: 'width' | 'height'): Promise<vo
     await window.cloudVerifyDevice.savePreferences({
       launchAtLogin: elements.launchAtLogin.checked, requireWindowsHello: elements.requireWindowsHello.checked,
       loginMode: elements.loginMode.value === 'browser' ? 'browser' : 'webview', showStatusFloat: elements.showStatusFloat.checked,
-      floatWidth: Number(elements.floatWidth.value), floatHeight: Number(elements.floatHeight.value), lockStatusFloat: elements.lockStatusFloat.checked, floatSizeSource,
+      floatWidth: Number(elements.floatWidth.value), floatHeight: Number(elements.floatHeight.value), floatOpacity: Number(elements.floatOpacity.value), lockStatusFloat: elements.lockStatusFloat.checked, floatSizeSource,
     })
     await reload(); setMessage(elements.settingsMessage, '系统设置已保存。')
   } catch (error) {
     elements.launchAtLogin.checked = previous.launchAtLogin; elements.loginMode.value = previous.loginMode
     elements.showStatusFloat.checked = previous.showStatusFloat; elements.floatWidth.value = String(previous.floatWidth); elements.floatHeight.value = String(previous.floatHeight)
+    elements.floatOpacity.value = String(previous.floatOpacity); elements.floatOpacityValue.value = `${previous.floatOpacity}%`; elements.floatOpacityValue.textContent = `${previous.floatOpacity}%`
     elements.lockStatusFloat.checked = previous.lockStatusFloat; elements.requireWindowsHello.checked = previous.requireWindowsHello
     setMessage(elements.settingsMessage, error instanceof Error ? error.message : '系统设置未保存。', true)
   }
@@ -278,6 +283,8 @@ function bindEvents(): void {
   elements.showStatusFloat.addEventListener('change', () => void savePreferences())
   elements.floatWidth.addEventListener('change', () => void savePreferences('width'))
   elements.floatHeight.addEventListener('change', () => void savePreferences('height'))
+  elements.floatOpacity.addEventListener('input', () => { elements.floatOpacityValue.value = `${elements.floatOpacity.value}%`; elements.floatOpacityValue.textContent = `${elements.floatOpacity.value}%` })
+  elements.floatOpacity.addEventListener('change', () => void savePreferences())
   elements.lockStatusFloat.addEventListener('change', () => void savePreferences())
   elements.requireWindowsHello.addEventListener('change', () => void savePreferences())
   elements.resetToDefaults.addEventListener('click', () => void handleResetToDefaults())

@@ -108,9 +108,15 @@ input[type="checkbox"]:disabled { opacity: .45; }
 .float-size-controls label { display: inline-flex; align-items: center; gap: 4px; color: #536a80; }
 .float-size-controls input { width: 72px; padding: 8px 7px; text-align: right; }
 .float-size-controls input:disabled { cursor: not-allowed; opacity: .55; }
+.float-opacity-controls { display: inline-flex; align-items: center; gap: 10px; min-width: 210px; }
+.float-opacity-controls input[type="range"] { width: 165px; accent-color: #3d8be7; }
+.float-opacity-controls output { min-width: 38px; color: #315a81; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.float-opacity-controls input:disabled { cursor: not-allowed; opacity: .55; }
 @media (max-width: 720px) {
   .security-list { grid-template-columns: 1fr; }
   .setting-row { align-items: stretch; flex-direction: column; }
   .setting-row select { width: 100%; }
   .float-size-controls { justify-content: flex-start; }
+  .float-opacity-controls { min-width: 0; }
+  .float-opacity-controls input[type="range"] { flex: 1; }
 }
