@@ -31,6 +31,7 @@ type Status = {
   companionRunning: boolean
   userName?: string
   displayName?: string
+  email?: string
   devicePort?: number
   lastError?: string
   activeTenantId?: string

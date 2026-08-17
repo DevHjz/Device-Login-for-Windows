@@ -15,7 +15,7 @@ type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
 type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; unknownCount: number; checkedAt: string; localIp: string; publicAccess: boolean; platformSupported: boolean }
 type Status = {
-  configured: boolean; signedIn: boolean; companionRunning: boolean; userName?: string; displayName?: string; devicePort?: number
+  configured: boolean; signedIn: boolean; companionRunning: boolean; userName?: string; displayName?: string; email?: string; devicePort?: number
   lastError?: string; activeTenantId?: string; activeTenantName?: string; activeTenantOrgName?: string
   requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; securityReport?: DeviceSecurityReport
 }

@@ -11,7 +11,10 @@
     <main class="float-card">
       <header class="float-header">
         <div><p>设备态势</p><h1>云端验证设备认证状态</h1></div>
-        <span id="float-risk" class="risk risk-neutral" title="正在读取本机安全状态">检查中</span>
+        <div class="header-actions" aria-label="状态操作">
+          <button id="float-login" class="icon-button" type="button" title="登录" aria-label="登录">⇥</button>
+          <button id="float-refresh" class="icon-button secondary" type="button" title="刷新全部状态" aria-label="刷新全部状态">↻</button>
+        </div>
       </header>
       <section class="float-details" aria-live="polite">
         <div><span>登录用户</span><strong id="float-user" title="未登录">—</strong></div>
@@ -20,10 +23,6 @@
         <div><span>IP 地址</span><strong id="float-ip" title="正在检测">—</strong></div>
         <div class="security-row"><span>安全认证</span><strong id="float-security" title="正在检测">检查中</strong></div>
       </section>
-      <div class="float-actions">
-        <button id="float-login" type="button">登录</button>
-        <button id="float-refresh" class="secondary" type="button">刷新</button>
-      </div>
     </main>
     <script src="float.js"></script>
   </body>

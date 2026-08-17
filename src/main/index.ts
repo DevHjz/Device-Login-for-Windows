@@ -23,7 +23,7 @@ const SESSION_FILE = 'session.json'
 const STATUS_FLOAT_BOUNDS_FILE = 'status-float-bounds.json'
 const SECURITY_REFRESH_INTERVAL = 30 * 60 * 1000
 const STATUS_FLOAT_DEFAULT_WIDTH = 204
-const STATUS_FLOAT_DEFAULT_HEIGHT = 252
+const STATUS_FLOAT_DEFAULT_HEIGHT = 196
 const STATUS_FLOAT_ASPECT_RATIO = STATUS_FLOAT_DEFAULT_WIDTH / STATUS_FLOAT_DEFAULT_HEIGHT
 
 type LoginMode = 'webview' | 'browser'
@@ -32,10 +32,10 @@ type Tenant = TenantPreset & { createdAt: string; updatedAt: string; source: 'bu
 type TenantInput = { displayName?: string; endpoint?: string; clientId?: string; orgName?: string; appName?: string; certificate?: string; allowedOrigins?: unknown; deviceName?: string }
 type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: LoginMode; showStatusFloat: boolean }
 type TenantStore = { activeTenantId: string; customTenants: Tenant[]; deletedBuiltInTenantIds: string[]; preferences: Preferences }
-type StoredSession = { tenantId: string; accessTokenEncrypted: string; refreshTokenEncrypted?: string; deviceSecretEncrypted?: string; userName: string; displayName: string; avatar: string; expiresAt?: number; bootMarker: string }
+type StoredSession = { tenantId: string; accessTokenEncrypted: string; refreshTokenEncrypted?: string; deviceSecretEncrypted?: string; userName: string; displayName: string; email?: string; emailLookupAttempted?: boolean; avatar: string; expiresAt?: number; bootMarker: string }
 type PendingLoginRequest = { tenantId: string; codeVerifier: string; timeout: NodeJS.Timeout }
 type Status = {
-  configured: boolean; signedIn: boolean; companionRunning: boolean; userName?: string; displayName?: string; devicePort?: number
+  configured: boolean; signedIn: boolean; companionRunning: boolean; userName?: string; displayName?: string; email?: string; devicePort?: number
   lastError?: string; activeTenantId?: string; activeTenantName?: string; activeTenantOrgName?: string
   requireWindowsHello: boolean; loginMode: LoginMode; securityReport?: DeviceSecurityReport
 }
@@ -244,13 +244,27 @@ async function restoreSession(): Promise<void> {
   if (!stored || stored.tenantId !== store.activeTenantId || isSessionExpired(stored)) return
   try { await activateSession(await getActiveTenant(store), stored) } catch { lastError = '设备服务未能恢复，请重新登录。' }
 }
+async function hydrateSessionEmail(stored: StoredSession, tenant: Tenant): Promise<StoredSession> {
+  if (stored.email || stored.emailLookupAttempted) return stored
+  stored.emailLookupAttempted = true
+  try {
+    const profile = await createIdentityClient(tenant).getUserInfo(decodeProtected(stored.accessTokenEncrypted))
+    if (profile.email) {
+      stored.email = profile.email
+      if (profile.displayName || profile.preferred_username) stored.displayName = profile.displayName || profile.preferred_username || stored.displayName
+    }
+  } catch { /* 账户资料接口暂不可用时保留原会话；悬浮窗会给出明确提示。 */ }
+  await writeJson(SESSION_FILE, stored)
+  return stored
+}
 async function refreshSecurityReport(): Promise<DeviceSecurityReport> { securityReport = await collectDeviceSecurityReport(); publishStatus(); return securityReport }
 function scheduleSecurityRefresh(): void { if (securityRefreshTimer) clearInterval(securityRefreshTimer); securityRefreshTimer = setInterval(() => { void refreshSecurityReport() }, SECURITY_REFRESH_INTERVAL) }
 async function getStatus(): Promise<Status> {
-  const store = await getStore(); const tenant = listTenants(store).find((item) => item.id === store.activeTenantId); const stored = await getStoredSession(); const currentSession = stored?.tenantId === store.activeTenantId ? stored : null
+  const store = await getStore(); const tenant = listTenants(store).find((item) => item.id === store.activeTenantId); const stored = await getStoredSession(); let currentSession = stored?.tenantId === store.activeTenantId ? stored : null
+  if (currentSession && tenant && !isSessionExpired(currentSession)) currentSession = await hydrateSessionEmail(currentSession, tenant)
   return {
     configured: Boolean(tenant?.clientId && tenant?.certificate), signedIn: Boolean(currentSession && !isSessionExpired(currentSession)), companionRunning,
-    userName: currentSession?.userName, displayName: currentSession?.displayName, devicePort: companionRunning ? companionPort ?? undefined : undefined,
+    userName: currentSession?.userName, displayName: currentSession?.displayName, email: currentSession?.email, devicePort: companionRunning ? companionPort ?? undefined : undefined,
     lastError: lastError || undefined, activeTenantId: tenant?.id, activeTenantName: tenant?.displayName, activeTenantOrgName: tenant?.orgName,
     requireWindowsHello: store.preferences.requireWindowsHello, loginMode: store.preferences.loginMode, securityReport,
   }
@@ -283,9 +297,10 @@ async function handleProtocolUrl(rawUrl: string): Promise<void> {
   if (!request) throw new Error('本次登录请求已失效，请返回网页后重新操作。')
   const tenant = await getTenantById(request.tenantId); const sdk = createIdentityClient(tenant); const tokens = await sdk.getAuthToken(code, request.codeVerifier); const user = sdk.parseAndVerifyAccessToken(tokens.access_token)
   if (!user.name || !tokens.device_secret) throw new Error('身份服务未返回有效的设备登录凭据。')
+  const profile = user.email ? user : await sdk.getUserInfo(tokens.access_token).catch(() => user)
   const stored: StoredSession = {
     tenantId: tenant.id, accessTokenEncrypted: encodeProtected(tokens.access_token), refreshTokenEncrypted: tokens.refresh_token ? encodeProtected(tokens.refresh_token) : undefined,
-    deviceSecretEncrypted: encodeProtected(tokens.device_secret), userName: user.name, displayName: user.displayName || user.name, avatar: user.avatar || '', expiresAt: tokenExpiration(tokens.access_token), bootMarker: currentBootMarker(),
+    deviceSecretEncrypted: encodeProtected(tokens.device_secret), userName: user.name, displayName: profile.displayName || profile.preferred_username || user.displayName || user.name, email: profile.email || user.email || '', avatar: profile.avatar || user.avatar || '', expiresAt: tokenExpiration(tokens.access_token), bootMarker: currentBootMarker(),
   }
   await writeJson(SESSION_FILE, stored); await activateSession(tenant, stored)
   if (authWindow) { authWindow.close(); authWindow = null }
@@ -319,20 +334,28 @@ async function startLogin(): Promise<void> {
 function defaultStatusFloatBounds(): StatusFloatBounds { const area = screen.getPrimaryDisplay().workArea; return { width: STATUS_FLOAT_DEFAULT_WIDTH, height: STATUS_FLOAT_DEFAULT_HEIGHT, x: area.x + area.width - STATUS_FLOAT_DEFAULT_WIDTH - 24, y: area.y + 24 } }
 function isVisibleBounds(bounds: StatusFloatBounds): boolean { return screen.getAllDisplays().some((display) => { const area = display.workArea; return bounds.x + 100 < area.x + area.width && bounds.x + bounds.width > area.x && bounds.y + 100 < area.y + area.height && bounds.y + bounds.height > area.y }) }
 async function saveStatusFloatBounds(): Promise<void> { if (statusFloatWindow) await writeJson(STATUS_FLOAT_BOUNDS_FILE, statusFloatWindow.getBounds()) }
+function reassertStatusFloatDesktopLayer(): void {
+  const floatWindow = statusFloatWindow
+  if (!floatWindow || floatWindow.isDestroyed()) return
+  floatWindow.setAlwaysOnTop(false)
+  void attachWindowToDesktop(floatWindow).then(() => { if (!floatWindow.isDestroyed()) floatWindow.setAlwaysOnTop(false) })
+}
 async function setStatusFloatVisible(visible: boolean): Promise<void> {
   if (!visible) { statusFloatWindow?.hide(); return }
   if (!statusFloatWindow) {
-    const saved = await readJson<StatusFloatBounds>(STATUS_FLOAT_BOUNDS_FILE); const bounds = saved && saved.width >= 190 && saved.height >= 235 && isVisibleBounds(saved) ? saved : defaultStatusFloatBounds()
-    statusFloatWindow = new BrowserWindow({ ...bounds, minWidth: 190, minHeight: 235, frame: false, transparent: true, backgroundColor: '#00000000', resizable: true, movable: true, alwaysOnTop: false, skipTaskbar: true, title: '云端验证设备认证状态', icon: iconPath(), show: false, webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
+    const saved = await readJson<StatusFloatBounds>(STATUS_FLOAT_BOUNDS_FILE); const bounds = saved && saved.width >= 190 && saved.height >= 185 && isVisibleBounds(saved) ? saved : defaultStatusFloatBounds()
+    statusFloatWindow = new BrowserWindow({ ...bounds, minWidth: 190, minHeight: 185, frame: false, transparent: true, backgroundColor: '#00000000', resizable: true, movable: true, alwaysOnTop: false, skipTaskbar: true, title: '云端验证设备认证状态', icon: iconPath(), show: false, webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
     statusFloatWindow.setAspectRatio(STATUS_FLOAT_ASPECT_RATIO)
     await attachWindowToDesktop(statusFloatWindow)
     statusFloatWindow.setAlwaysOnTop(false)
     statusFloatWindow.setVisibleOnAllWorkspaces(false)
     const persist = (): void => { if (statusFloatBoundsSaveTimer) clearTimeout(statusFloatBoundsSaveTimer); statusFloatBoundsSaveTimer = setTimeout(() => { void saveStatusFloatBounds() }, 400) }
-    statusFloatWindow.on('move', persist); statusFloatWindow.on('resize', persist); statusFloatWindow.on('closed', () => { statusFloatWindow = null })
+    statusFloatWindow.on('move', persist); statusFloatWindow.on('resize', persist)
+    statusFloatWindow.on('show', reassertStatusFloatDesktopLayer); statusFloatWindow.on('restore', reassertStatusFloatDesktopLayer)
+    statusFloatWindow.on('closed', () => { statusFloatWindow = null })
     await statusFloatWindow.loadFile(path.join(__dirname, '../renderer/float.html'))
   }
-  statusFloatWindow.showInactive(); void getStatus().then((status) => statusFloatWindow?.webContents.send('status:changed', status))
+  statusFloatWindow.showInactive(); reassertStatusFloatDesktopLayer(); void getStatus().then((status) => statusFloatWindow?.webContents.send('status:changed', status))
 }
 function createTray(): void {
   tray = new Tray(iconPath()); tray.setToolTip(PRODUCT_NAME)

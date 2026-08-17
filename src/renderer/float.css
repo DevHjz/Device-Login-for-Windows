@@ -1,23 +1,18 @@
 :root { color-scheme: light; font-family: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif; color: #173b5d; }
 * { box-sizing: border-box; }
 html, body { width: 100%; min-width: 0; min-height: 0; margin: 0; background: transparent; }
-.float-card { width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 10px; border: 1px solid rgba(132, 190, 239, .82); border-radius: 14px; background: rgba(222, 243, 255, .86); box-shadow: 0 10px 26px rgba(25, 82, 128, .24); backdrop-filter: blur(12px); }
-.float-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px; padding: 1px 1px 8px; cursor: move; -webkit-app-region: drag; user-select: none; }
-.float-header p { margin: 0 0 2px; color: #4e83ad; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
-h1 { margin: 0; color: #224d72; font-size: 12px; letter-spacing: 0; line-height: 1.35; white-space: nowrap; }
-.risk { display: inline-flex; align-items: center; min-height: 21px; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; white-space: nowrap; }
-.risk-neutral { color: #526f88; background: rgba(237, 246, 253, .92); }
-.risk-pass { color: #176b3e; background: rgba(213, 245, 224, .95); }
-.risk-warning { color: #8a6116; background: rgba(255, 239, 192, .94); }
-.risk-danger { color: #a22f42; background: rgba(255, 221, 226, .94); }
-.float-details { display: grid; gap: 4px; }
-.float-details > div { display: grid; grid-template-columns: 60px minmax(0, 1fr); align-items: center; gap: 5px; min-height: 25px; padding: 4px 6px; border-radius: 8px; background: rgba(255, 255, 255, .52); }
-.float-details span { color: #5680a3; font-size: 10px; }
-.float-details strong { overflow: hidden; color: #254d6d; font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.float-card { width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 8px; border: 1px solid rgba(132, 190, 239, .82); border-radius: 13px; background: rgba(222, 243, 255, .86); box-shadow: 0 9px 22px rgba(25, 82, 128, .24); backdrop-filter: blur(12px); }
+.float-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 5px; padding: 1px 1px 6px; cursor: move; -webkit-app-region: drag; user-select: none; }
+.float-header p { margin: 0 0 1px; color: #4e83ad; font-size: 8px; font-weight: 800; letter-spacing: .07em; }
+h1 { margin: 0; color: #224d72; font-size: 11px; letter-spacing: 0; line-height: 1.28; white-space: nowrap; }
+.header-actions { display: flex; gap: 4px; -webkit-app-region: no-drag; }
+.icon-button { display: inline-grid; width: 25px; min-width: 25px; min-height: 25px; place-items: center; padding: 0; border: 1px solid #4d9bea; border-radius: 7px; color: #fff; background: #3388df; cursor: pointer; font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; font-size: 16px; font-weight: 700; line-height: 1; }
+.icon-button:hover { background: #2479ce; }
+.icon-button.secondary { color: #2f699c; border-color: #a4cceb; background: rgba(255, 255, 255, .8); }
+.icon-button.secondary:hover { background: #fff; }
+.icon-button:disabled { cursor: not-allowed; opacity: .58; }
+.float-details { display: grid; gap: 3px; }
+.float-details > div { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 4px; min-height: 22px; padding: 3px 5px; border-radius: 7px; background: rgba(255, 255, 255, .52); }
+.float-details span { color: #5680a3; font-size: 9px; }
+.float-details strong { overflow: hidden; color: #254d6d; font-size: 10px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .float-details .security-row { border: 1px solid rgba(131, 185, 227, .36); background: rgba(245, 251, 255, .72); }
-.float-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; -webkit-app-region: no-drag; }
-button { min-height: 28px; border: 1px solid #4d9bea; border-radius: 8px; color: #fff; background: #3388df; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700; }
-button:hover { background: #2479ce; }
-button.secondary { color: #2f699c; border-color: #a4cceb; background: rgba(255, 255, 255, .8); }
-button.secondary:hover { background: #fff; }
-button:disabled { cursor: not-allowed; opacity: .58; }

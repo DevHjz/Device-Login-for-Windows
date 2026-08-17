@@ -1,6 +1,6 @@
 {
   "name": "cloud-verify-device-auth",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "private": true,
   "description": "Cloud Verify Device Auth for Windows",
   "main": "dist/main/index.js",
