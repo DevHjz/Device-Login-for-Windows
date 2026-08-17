@@ -1,8 +1,8 @@
 {
-  "name": "cloud-verify-device-login",
-  "version": "2.0.2",
+  "name": "cloud-verify-device-auth",
+  "version": "3.0.0",
   "private": true,
-  "description": "Cloud Verify Device Login for Windows",
+  "description": "Cloud Verify Device Auth for Windows",
   "main": "dist/main/index.js",
   "license": "Apache-2.0",
   "author": "devhjz",
@@ -25,9 +25,9 @@
     "typescript": "^5.7.2"
   },
   "build": {
-    "appId": "com.devhjz.cloudverify.device-login",
-    "productName": "云端验证设备登录助手",
-    "executableName": "cloud-verify-device-login",
+    "appId": "com.devhjz.cloudverify.device-auth",
+    "productName": "云端验证设备认证服务",
+    "executableName": "cloud-verify-device-auth",
     "asar": true,
     "directories": {
       "output": "release",
@@ -52,7 +52,7 @@
           "arch": ["x64", "arm64"]
         }
       ],
-      "artifactName": "cloud-verify-device-login-${version}-win-${arch}-setup.${ext}"
+      "artifactName": "cloud-verify-device-auth-${version}-win-${arch}-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -62,7 +62,7 @@
       "uninstallerIcon": "assets/app.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "云端验证设备登录助手",
+      "shortcutName": "云端验证设备认证服务",
       "perMachine": false,
       "deleteAppDataOnUninstall": false
     }

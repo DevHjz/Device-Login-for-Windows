@@ -1,21 +1,28 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, session as electronSession, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, screen, session as electronSession, shell, Tray } from 'electron'
 import * as crypto from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { IdentityClient } from './identity-client'
+import { collectDeviceSecurityReport, type DeviceSecurityReport } from './device-security'
 import { NativeSsoService } from './native-sso'
 import { BUILT_IN_TENANTS, type TenantPreset } from './tenant-presets'
 import { ToastApprovalManager } from './toast-approval'
 import { getWindowsHelloAvailability, verifyWithWindowsHello } from './windows-hello'
 
-const PRODUCT_NAME = '云端验证设备登录助手'
+const PRODUCT_NAME = '云端验证设备认证服务'
+// 保留已登记的 OAuth 回调协议，避免服务端既有配置失效。
 const PROTOCOL = 'cloud-verify-device-login'
 const CALLBACK_URI = `${PROTOCOL}://oauth/callback`
 const DEFAULT_PORT = 47321
-const APP_USER_MODEL_ID = 'com.devhjz.cloudverify.device-login'
+const APP_USER_MODEL_ID = 'com.devhjz.cloudverify.device-auth'
 const START_IN_TRAY_ARGUMENT = '--start-in-tray'
 const TENANT_STORE_FILE = 'tenants.json'
 const SESSION_FILE = 'session.json'
+const BOOT_MARKER_FILE = 'boot-marker.json'
+const STATUS_FLOAT_BOUNDS_FILE = 'status-float-bounds.json'
+const execFileAsync = promisify(execFile)
 
 type Tenant = TenantPreset & {
   clientSecretEncrypted?: string
@@ -37,13 +44,25 @@ type TenantInput = {
   clientSecret?: string
 }
 
+type LoginMode = 'webview' | 'browser'
+
+type Preferences = {
+  launchAtLogin: boolean
+  requireWindowsHello: boolean
+  loginMode: LoginMode
+  showStatusFloat: boolean
+}
+
 type TenantStore = {
   activeTenantId: string
   customTenants: Tenant[]
   builtInOverrides: Record<string, Tenant>
   deletedBuiltInTenantIds: string[]
-  preferences: { launchAtLogin: boolean; requireWindowsHello: boolean }
+  preferences: Preferences
 }
+
+type BootMarker = { marker: string }
+type StatusFloatBounds = { x: number; y: number; width: number; height: number }
 
 type StoredSession = {
   tenantId: string
@@ -73,15 +92,21 @@ type Status = {
   lastError?: string
   activeTenantId?: string
   activeTenantName?: string
+  activeTenantOrgName?: string
   requireWindowsHello: boolean
+  securityReport?: DeviceSecurityReport
 }
 
 let mainWindow: BrowserWindow | null = null
 let authWindow: BrowserWindow | null = null
+let statusFloatWindow: BrowserWindow | null = null
+let statusFloatBoundsSaveTimer: NodeJS.Timeout | null = null
 let tray: Tray | null = null
 let companion: NativeSsoService | null = null
 let companionPort: number | null = null
 let sessionExpiryTimer: NodeJS.Timeout | null = null
+let securityRefreshTimer: NodeJS.Timeout | null = null
+let securityReport: DeviceSecurityReport | undefined
 const pendingLoginRequests = new Map<string, PendingLoginRequest>()
 const recentOAuthCallbacks = new Map<string, NodeJS.Timeout>()
 let companionRunning = false
@@ -157,7 +182,7 @@ function defaultStore(): TenantStore {
     customTenants: [],
     builtInOverrides: {},
     deletedBuiltInTenantIds: [],
-    preferences: { launchAtLogin: false, requireWindowsHello: false },
+    preferences: { launchAtLogin: false, requireWindowsHello: false, loginMode: 'webview', showStatusFloat: true },
   }
 }
 
@@ -172,6 +197,8 @@ async function getStore(): Promise<TenantStore> {
     preferences: {
       launchAtLogin: Boolean(source.preferences?.launchAtLogin),
       requireWindowsHello: Boolean(source.preferences?.requireWindowsHello),
+      loginMode: source.preferences?.loginMode === 'browser' ? 'browser' : 'webview',
+      showStatusFloat: source.preferences?.showStatusFloat !== false,
     },
   }
 }
@@ -259,7 +286,7 @@ function validateTenantInput(input: TenantInput, existing?: Tenant): Tenant {
 }
 
 function createIdentityClient(tenant: Tenant): IdentityClient {
-  if (!tenant.clientSecretEncrypted) throw new Error('当前租户尚未保存客户端密钥。请由管理员在租户设置中完成配置。')
+  if (!tenant.clientSecretEncrypted) throw new Error('当前租户尚未完成认证配置，请由管理员在租户设置中完成设置。')
   return new IdentityClient({
     endpoint: tenant.endpoint,
     clientId: tenant.clientId,
@@ -293,6 +320,56 @@ async function clearStoredSession(): Promise<void> {
 
 async function clearIdentityCookies(): Promise<void> {
   await electronSession.defaultSession.clearStorageData({ storages: ['cookies'] })
+}
+
+async function getWindowsBootMarker(): Promise<string> {
+  if (process.platform !== 'win32') return `non-windows:${process.uptime()}`
+  try {
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToFileTimeUtc()'])
+    const marker = stdout.trim()
+    if (marker) return marker
+  } catch {
+    // 使用进程启动时间作为受限环境下的保守回退，避免恢复旧会话。
+  }
+  return `fallback:${Date.now()}`
+}
+
+async function notifyServerLogout(stored: StoredSession | null): Promise<void> {
+  if (!stored) return
+  try {
+    const tenant = await getTenantById(stored.tenantId)
+    const accessToken = decodeProtected(stored.accessTokenEncrypted)
+    const cookies = await electronSession.defaultSession.cookies.get({ url: tenant.endpoint })
+    const cookieHeader = cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
+    await fetch(new URL('/api/logout', tenant.endpoint), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      },
+      signal: AbortSignal.timeout(8_000),
+    })
+  } catch {
+    // 无网络或服务端会话已失效时，仍继续清除本机凭据与 Cookies。
+  }
+}
+
+async function signOutCurrentSession(): Promise<void> {
+  const stored = await getStoredSession()
+  await stopCompanion()
+  await notifyServerLogout(stored)
+  await clearStoredSession()
+  await clearIdentityCookies()
+}
+
+async function signOutOnNewBoot(): Promise<boolean> {
+  const marker = await getWindowsBootMarker()
+  const previous = await readJson<BootMarker>(BOOT_MARKER_FILE)
+  await writeJson(BOOT_MARKER_FILE, { marker })
+  if (!previous || previous.marker === marker) return false
+  await signOutCurrentSession()
+  return true
 }
 
 async function stopCompanion(): Promise<void> {
@@ -366,6 +443,17 @@ async function restoreSession(): Promise<void> {
   }
 }
 
+async function refreshSecurityReport(): Promise<DeviceSecurityReport> {
+  securityReport = await collectDeviceSecurityReport()
+  publishStatus()
+  return securityReport
+}
+
+function scheduleSecurityRefresh(): void {
+  if (securityRefreshTimer) clearInterval(securityRefreshTimer)
+  securityRefreshTimer = setInterval(() => { void refreshSecurityReport() }, 30 * 60 * 1000)
+}
+
 async function getStatus(): Promise<Status> {
   const store = await getStore()
   const tenant = listTenants(store).find((item) => item.id === store.activeTenantId)
@@ -381,12 +469,17 @@ async function getStatus(): Promise<Status> {
     lastError: lastError || undefined,
     activeTenantId: tenant?.id,
     activeTenantName: tenant?.displayName,
+    activeTenantOrgName: tenant?.orgName,
     requireWindowsHello: store.preferences.requireWindowsHello,
+    securityReport,
   }
 }
 
 function publishStatus(): void {
-  void getStatus().then((status) => mainWindow?.webContents.send('status:changed', status))
+  void getStatus().then((status) => {
+    mainWindow?.webContents.send('status:changed', status)
+    statusFloatWindow?.webContents.send('status:changed', status)
+  })
 }
 
 function createSignInUrl(tenant: Tenant, state: string): string {
@@ -446,6 +539,59 @@ async function handleProtocolUrl(rawUrl: string): Promise<void> {
   authWindow?.close()
   authWindow = null
   publishStatus()
+}
+
+function defaultStatusFloatBounds(): StatusFloatBounds {
+  const workArea = screen.getPrimaryDisplay().workArea
+  const width = 350
+  const height = 300
+  return { x: workArea.x + workArea.width - width - 20, y: workArea.y + 20, width, height }
+}
+
+async function saveStatusFloatBounds(): Promise<void> {
+  if (!statusFloatWindow) return
+  const bounds = statusFloatWindow.getBounds()
+  await writeJson(STATUS_FLOAT_BOUNDS_FILE, bounds)
+}
+
+async function setStatusFloatVisible(visible: boolean): Promise<void> {
+  if (!visible) {
+    statusFloatWindow?.hide()
+    return
+  }
+  if (!statusFloatWindow) {
+    const savedBounds = await readJson<StatusFloatBounds>(STATUS_FLOAT_BOUNDS_FILE)
+    const bounds = savedBounds && savedBounds.width >= 280 && savedBounds.height >= 230 ? savedBounds : defaultStatusFloatBounds()
+    statusFloatWindow = new BrowserWindow({
+      ...bounds,
+      minWidth: 280,
+      minHeight: 230,
+      title: '云端验证设备认证状态',
+      icon: iconPath(),
+      frame: false,
+      transparent: true,
+      resizable: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      show: false,
+      backgroundColor: '#edf1f5',
+      webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    })
+    statusFloatWindow.setAlwaysOnTop(true, 'normal')
+    statusFloatWindow.setVisibleOnAllWorkspaces(false)
+    statusFloatWindow.on('move', () => {
+      if (statusFloatBoundsSaveTimer) clearTimeout(statusFloatBoundsSaveTimer)
+      statusFloatBoundsSaveTimer = setTimeout(() => { void saveStatusFloatBounds() }, 400)
+    })
+    statusFloatWindow.on('resize', () => {
+      if (statusFloatBoundsSaveTimer) clearTimeout(statusFloatBoundsSaveTimer)
+      statusFloatBoundsSaveTimer = setTimeout(() => { void saveStatusFloatBounds() }, 400)
+    })
+    statusFloatWindow.on('closed', () => { statusFloatWindow = null })
+    await statusFloatWindow.loadFile(path.join(__dirname, '../renderer/float.html'))
+  }
+  statusFloatWindow.showInactive()
+  void getStatus().then((status) => statusFloatWindow?.webContents.send('status:changed', status))
 }
 
 function showMainWindow(): void {
@@ -512,6 +658,20 @@ function createAuthWindow(url: string): void {
   void authWindow.loadURL(url)
 }
 
+async function beginLogin(): Promise<void> {
+  const store = await getStore()
+  const tenant = await getActiveTenant(store)
+  if (!tenant.clientSecretEncrypted) throw new Error('当前租户尚未完成认证配置，请联系管理员完成设置。')
+  const state = crypto.randomBytes(32).toString('base64url')
+  rememberLoginRequest(state, tenant.id)
+  const signInUrl = createSignInUrl(tenant, state)
+  if (store.preferences.loginMode === 'browser') {
+    await shell.openExternal(signInUrl)
+    return
+  }
+  createAuthWindow(signInUrl)
+}
+
 function registerProtocol(): void {
   if (process.defaultApp && process.argv.length >= 2) app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])])
   else app.setAsDefaultProtocolClient(PROTOCOL)
@@ -533,9 +693,7 @@ async function selectTenant(tenantId: string): Promise<PublicTenant> {
     detail: '为保护不同组织的身份信息，应用会停止设备服务并清除当前账户的登录信息。', noLink: true,
   })
   if (result.response !== 0) throw new Error('已取消切换租户。')
-  await stopCompanion()
-  await clearStoredSession()
-  await clearIdentityCookies()
+  await signOutCurrentSession()
   store.activeTenantId = tenantId
   await writeJson(TENANT_STORE_FILE, store)
   lastError = ''
@@ -544,24 +702,13 @@ async function selectTenant(tenantId: string): Promise<PublicTenant> {
 }
 
 async function saveTenant(input: TenantInput): Promise<PublicTenant> {
+  if (input.id) throw new Error('租户不支持编辑。如需变更，请删除后重新添加。')
   const store = await getStore()
-  const existing = input.id ? listTenants(store).find((tenant) => tenant.id === input.id) : undefined
-  if (input.id && !existing) throw new Error('要编辑的租户不存在。')
-  const next = validateTenantInput(input, existing)
-  const duplicate = listTenants(store).find((tenant) => tenant.id !== next.id && tenant.displayName === next.displayName)
+  const next = validateTenantInput(input)
+  const duplicate = listTenants(store).find((tenant) => tenant.displayName === next.displayName)
   if (duplicate) throw new Error('租户显示名称已存在。')
-  if (existing?.source === 'built-in') store.builtInOverrides[next.id] = { ...next, source: 'built-in' }
-  else {
-    const index = store.customTenants.findIndex((tenant) => tenant.id === next.id)
-    if (index >= 0) store.customTenants[index] = { ...next, source: 'custom' }
-    else store.customTenants.push({ ...next, source: 'custom' })
-  }
+  store.customTenants.push({ ...next, source: 'custom' })
   await writeJson(TENANT_STORE_FILE, store)
-  if (store.activeTenantId === next.id) {
-    await stopCompanion()
-    await clearStoredSession()
-    await clearIdentityCookies()
-  }
   publishStatus()
   return toPublicTenant(next)
 }
@@ -573,7 +720,7 @@ async function deleteTenant(tenantId: string): Promise<void> {
   if (listTenants(store).length <= 1) throw new Error('至少需要保留一个租户。')
   const result = await dialog.showMessageBox({
     type: 'warning', buttons: ['删除租户', '取消'], defaultId: 1, cancelId: 1, title: '确认删除租户',
-    message: `确定删除“${tenant.displayName}”吗？`, detail: '该租户的本机保存密钥和登录状态将一并删除。', noLink: true,
+    message: `确定删除“${tenant.displayName}”吗？`,     detail: '该租户的本机认证信息和登录状态将一并删除。', noLink: true,
   })
   if (result.response !== 0) return
   if (tenant.source === 'built-in') {
@@ -581,9 +728,7 @@ async function deleteTenant(tenantId: string): Promise<void> {
     delete store.builtInOverrides[tenant.id]
   } else store.customTenants = store.customTenants.filter((item) => item.id !== tenant.id)
   if (store.activeTenantId === tenant.id) {
-    await stopCompanion()
-    await clearStoredSession()
-    await clearIdentityCookies()
+    await signOutCurrentSession()
     store.activeTenantId = listTenants(store)[0]?.id ?? ''
   }
   await writeJson(TENANT_STORE_FILE, store)
@@ -609,28 +754,27 @@ function registerIpc(): void {
   ipcMain.handle('tenant:select', async (_event, tenantId: string) => selectTenant(tenantId))
   ipcMain.handle('tenant:save', async (_event, input: TenantInput) => saveTenant(input))
   ipcMain.handle('tenant:delete', async (_event, tenantId: string) => deleteTenant(tenantId))
-  ipcMain.handle('preferences:save', async (_event, input: { launchAtLogin?: boolean; requireWindowsHello?: boolean }) => {
+  ipcMain.handle('preferences:save', async (_event, input: Partial<Preferences>) => {
     const store = await getStore()
     const nextHello = Boolean(input.requireWindowsHello)
     if (nextHello !== store.preferences.requireWindowsHello) await verifyWithWindowsHello('确认更改登录授权验证设置')
-    store.preferences = { launchAtLogin: Boolean(input.launchAtLogin), requireWindowsHello: nextHello }
+    store.preferences = {
+      launchAtLogin: Boolean(input.launchAtLogin),
+      requireWindowsHello: nextHello,
+      loginMode: input.loginMode === 'browser' ? 'browser' : 'webview',
+      showStatusFloat: input.showStatusFloat !== false,
+    }
     applyLaunchAtLogin(store.preferences.launchAtLogin)
     await writeJson(TENANT_STORE_FILE, store)
+    await setStatusFloatVisible(store.preferences.showStatusFloat)
     publishStatus()
     return store.preferences
   })
   ipcMain.handle('auth:status', getStatus)
-  ipcMain.handle('auth:login', async () => {
-    const tenant = await getActiveTenant()
-    if (!tenant.clientSecretEncrypted) throw new Error('当前租户尚未完成安全配置，请先保存客户端密钥。')
-    const state = crypto.randomBytes(32).toString('base64url')
-    rememberLoginRequest(state, tenant.id)
-    createAuthWindow(createSignInUrl(tenant, state))
-  })
+  ipcMain.handle('security:refresh', refreshSecurityReport)
+  ipcMain.handle('auth:login', beginLogin)
   ipcMain.handle('auth:logout', async () => {
-    await stopCompanion()
-    await clearStoredSession()
-    await clearIdentityCookies()
+    await signOutCurrentSession()
     lastError = ''
     publishStatus()
   })
@@ -661,15 +805,30 @@ else {
     launchInTray = launchInTray || Boolean(loginItemSettings.wasOpenedAtLogin)
     registerProtocol()
     registerIpc()
-    applyLaunchAtLogin((await getStore()).preferences.launchAtLogin)
+    const initialStore = await getStore()
+    applyLaunchAtLogin(initialStore.preferences.launchAtLogin)
+    const signedOutAfterBoot = await signOutOnNewBoot()
+    const bootStore = await getStore()
+    // 新启动周期使用内置登录窗口时，主界面必须保持隐藏，不能在认证窗口前闪现。
+    if (signedOutAfterBoot && bootStore.preferences.loginMode === 'webview') launchInTray = true
     createTray()
     createMainWindow()
-    await restoreSession()
+    await setStatusFloatVisible(bootStore.preferences.showStatusFloat)
+    scheduleSecurityRefresh()
+    void refreshSecurityReport()
+    if (!signedOutAfterBoot) await restoreSession()
+    if (signedOutAfterBoot && bootStore.preferences.loginMode === 'webview') {
+      void beginLogin().catch((error) => { lastError = userFacingError(error); publishStatus() })
+    }
     publishStatus()
     const startupCallback = extractProtocolUrl(process.argv)
     if (startupCallback) await handleProtocolUrl(startupCallback)
     app.on('activate', showMainWindow)
   })
   app.on('window-all-closed', () => undefined)
-  app.on('before-quit', () => { isQuitting = true; void stopCompanion() })
+  app.on('before-quit', () => {
+    isQuitting = true
+    if (securityRefreshTimer) clearInterval(securityRefreshTimer)
+    void stopCompanion()
+  })
 }

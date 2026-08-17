@@ -7,22 +7,24 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'windows-release.yml'), 'utf8');
 const gitignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
 
-assert.equal(packageJson.build.productName, '云端验证设备登录助手');
-assert.equal(packageJson.build.executableName, 'cloud-verify-device-login');
+assert.equal(packageJson.version, '3.0.0');
+assert.equal(packageJson.build.productName, '云端验证设备认证服务');
+assert.equal(packageJson.build.executableName, 'cloud-verify-device-auth');
 assert.equal(packageJson.build.win.icon, 'assets/app.ico');
 assert.equal(packageJson.build.win.signAndEditExecutable, true);
 assert.equal(packageJson.build.nsis.installerIcon, 'assets/app.ico');
 assert.equal(packageJson.build.nsis.uninstallerIcon, 'assets/app.ico');
 assert.deepEqual(packageJson.build.extraResources, [{ from: 'assets/app.ico', to: 'app.ico' }]);
-assert.match(packageJson.build.win.artifactName, /cloud-verify-device-login/);
+assert.match(packageJson.build.win.artifactName, /cloud-verify-device-auth/);
 assert.deepEqual(packageJson.build.win.target[0].arch, ['x64', 'arm64']);
-assert.equal(packageJson.build.nsis.shortcutName, '云端验证设备登录助手');
+assert.equal(packageJson.build.nsis.shortcutName, '云端验证设备认证服务');
 assert.equal(packageJson.build.nsis.allowToChangeInstallationDirectory, false);
 assert.match(packageJson.scripts['dist:win:x64'], /--publish never/);
 assert.match(packageJson.scripts['dist:win:arm64'], /--publish never/);
 assert.match(workflow, /arch: \[x64, arm64\]/);
 assert.match(workflow, /Expected exactly two installer files/);
 assert.match(workflow, /Compress-Archive/);
+assert.match(workflow, /cloud-verify-device-auth-windows-x64-arm64/);
 assert.match(workflow, /TENANT_HUANGFA_CLIENT_SECRET/);
 assert.match(workflow, /TENANT_PUBLIC_IAM_CLIENT_SECRET/);
 assert.match(workflow, /No secret is written to the workspace or release artifact/);

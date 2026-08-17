@@ -73,7 +73,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.arch }}
-          path: release/cloud-verify-device-login-*-win-${{ matrix.arch }}-setup.exe
+          path: release/cloud-verify-device-auth-*-win-${{ matrix.arch }}-setup.exe
           if-no-files-found: error
           retention-days: 14
 
@@ -99,12 +99,12 @@ jobs:
         run: |
           $files = Get-ChildItem -Path installers -Filter '*.exe'
           if ($files.Count -ne 2) { throw "Expected exactly two installer files, found $($files.Count)." }
-          Compress-Archive -Path $files.FullName -DestinationPath cloud-verify-device-login-windows-x64-arm64.zip -Force
+          Compress-Archive -Path $files.FullName -DestinationPath cloud-verify-device-auth-windows-x64-arm64.zip -Force
 
       - name: Upload combined release archive
         uses: actions/upload-artifact@v4
         with:
-          name: cloud-verify-device-login-windows-x64-arm64
-          path: cloud-verify-device-login-windows-x64-arm64.zip
+          name: cloud-verify-device-auth-windows-x64-arm64
+          path: cloud-verify-device-auth-windows-x64-arm64.zip
           if-no-files-found: error
           retention-days: 30

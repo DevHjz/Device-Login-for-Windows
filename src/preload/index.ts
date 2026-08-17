@@ -16,14 +16,24 @@ type PublicTenant = {
   hasClientSecret: boolean
 }
 
+type LoginMode = 'webview' | 'browser'
 type Preferences = {
   launchAtLogin: boolean
   requireWindowsHello: boolean
+  loginMode: LoginMode
+  showStatusFloat: boolean
 }
 
-type HelloAvailability = {
-  available: boolean
-  message: string
+type HelloAvailability = { available: boolean; message: string }
+type SecurityCheckState = 'pass' | 'warning' | 'unknown'
+type SecurityCheck = { id: string; title: string; state: SecurityCheckState; detail: string }
+type DeviceSecurityReport = {
+  checks: SecurityCheck[]
+  risk: 'pass' | 'warning' | 'danger'
+  issueCount: number
+  checkedAt: string
+  localIp: string
+  publicAccess: boolean
 }
 
 type Status = {
@@ -37,6 +47,7 @@ type Status = {
   activeTenantId?: string
   activeTenantName?: string
   requireWindowsHello: boolean
+  securityReport?: DeviceSecurityReport
 }
 
 type TenantInput = {
@@ -59,6 +70,7 @@ const api = {
   deleteTenant: (tenantId: string): Promise<void> => ipcRenderer.invoke('tenant:delete', tenantId),
   savePreferences: (preferences: Preferences): Promise<Preferences> => ipcRenderer.invoke('preferences:save', preferences),
   getStatus: (): Promise<Status> => ipcRenderer.invoke('auth:status'),
+  refreshSecurity: (): Promise<DeviceSecurityReport> => ipcRenderer.invoke('security:refresh'),
   login: (): Promise<void> => ipcRenderer.invoke('auth:login'),
   logout: (): Promise<void> => ipcRenderer.invoke('auth:logout'),
   onStatusChanged: (listener: (status: Status) => void): (() => void) => {

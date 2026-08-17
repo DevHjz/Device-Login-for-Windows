@@ -7,7 +7,7 @@ const assetsSource = path.join(__dirname, '..', 'assets');
 const assetsTarget = path.join(__dirname, '..', 'dist', 'assets');
 
 fs.mkdirSync(rendererTarget, { recursive: true });
-for (const file of ['index.html', 'styles.css']) {
+for (const file of ['index.html', 'styles.css', 'float.html', 'float.css', 'float.js']) {
   fs.copyFileSync(path.join(rendererSource, file), path.join(rendererTarget, file));
 }
 fs.mkdirSync(assetsTarget, { recursive: true });
