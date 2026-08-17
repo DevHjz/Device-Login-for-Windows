@@ -13,7 +13,7 @@ type PublicTenant = {
 type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean }
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
-type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; checkedAt: string; localIp: string; publicAccess: boolean }
+type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; unknownCount: number; checkedAt: string; localIp: string; publicAccess: boolean; platformSupported: boolean }
 type Status = {
   configured: boolean; signedIn: boolean; companionRunning: boolean; userName?: string; displayName?: string; devicePort?: number
   lastError?: string; activeTenantId?: string; activeTenantName?: string; activeTenantOrgName?: string
@@ -33,6 +33,7 @@ interface Window {
     login(): Promise<void>
     logout(): Promise<void>
     refreshSecurity(): Promise<DeviceSecurityReport>
+    resetToDefaults(): Promise<void>
     onStatusChanged(listener: (status: Status) => void): () => void
   }
 }
@@ -69,6 +70,7 @@ const elements = {
   requireWindowsHello: byId<HTMLInputElement>('require-windows-hello'),
   helloHelp: byId<HTMLElement>('hello-help'),
   settingsMessage: byId<HTMLElement>('settings-message'),
+  resetToDefaults: byId<HTMLButtonElement>('reset-to-defaults'),
   tenantEditor: byId<HTMLElement>('tenant-editor'),
   cancelTenantEdit: byId<HTMLButtonElement>('cancel-tenant-edit'),
   tenantForm: byId<HTMLFormElement>('tenant-form'),
@@ -121,9 +123,12 @@ function renderStatus(status: Status): void {
 }
 
 function riskText(report: DeviceSecurityReport): { title: string; summary: string } {
+  if (!report.platformSupported) return { title: '当前环境暂不支持检测', summary: '设备安全态势仅在 Windows 设备上提供。' }
   if (report.risk === 'pass') return { title: '通过检测', summary: '设备登录凭据、杀毒软件、病毒库和防火墙均通过检测。' }
-  if (report.risk === 'danger') return { title: '高危风险', summary: `发现 ${report.issueCount} 项需要处理的安全问题，请尽快检查设备设置。` }
-  return { title: '存在隐患', summary: `发现 ${report.issueCount} 项需要处理或确认的安全问题。` }
+  if (report.risk === 'danger') return { title: '高危风险', summary: `发现 ${report.issueCount} 项明确的安全问题，请尽快检查设备设置。` }
+  if (report.issueCount > 0 && report.unknownCount > 0) return { title: '存在隐患', summary: `发现 ${report.issueCount} 项安全问题；另有 ${report.unknownCount} 项状态需要重新检测。` }
+  if (report.issueCount > 0) return { title: '存在隐患', summary: `发现 ${report.issueCount} 项需要处理的安全问题。` }
+  return { title: '检测异常', summary: `${report.unknownCount} 项系统状态暂未读取成功，请点击“刷新检测”重试。` }
 }
 
 function renderSecurity(report?: DeviceSecurityReport): void {
@@ -241,6 +246,14 @@ async function handleRefreshSecurity(): Promise<void> {
   finally { elements.refreshSecurity.disabled = false }
 }
 
+async function handleResetToDefaults(): Promise<void> {
+  elements.resetToDefaults.disabled = true
+  setMessage(elements.settingsMessage, '等待确认重置…')
+  try { await window.cloudVerifyDevice.resetToDefaults(); await reload(); setMessage(elements.settingsMessage, '已恢复默认状态。') }
+  catch (error) { setMessage(elements.settingsMessage, error instanceof Error ? error.message : '重置未完成。', true) }
+  finally { elements.resetToDefaults.disabled = false }
+}
+
 function bindEvents(): void {
   elements.openSettings.addEventListener('click', () => { elements.systemSettings.hidden = !elements.systemSettings.hidden; elements.openSettings.textContent = elements.systemSettings.hidden ? '系统设置' : '收起设置' })
   elements.tenantSelect.addEventListener('change', () => void handleTenantSelect())
@@ -252,6 +265,7 @@ function bindEvents(): void {
   elements.loginMode.addEventListener('change', () => void savePreferences())
   elements.showStatusFloat.addEventListener('change', () => void savePreferences())
   elements.requireWindowsHello.addEventListener('change', () => void savePreferences())
+  elements.resetToDefaults.addEventListener('click', () => void handleResetToDefaults())
   elements.login.addEventListener('click', () => void handleLogin())
   elements.logout.addEventListener('click', () => void handleLogout())
   elements.refreshSecurity.addEventListener('click', () => void handleRefreshSecurity())

@@ -24,7 +24,7 @@ type Preferences = {
 
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
-type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; checkedAt: string; localIp: string; publicAccess: boolean }
+type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; unknownCount: number; checkedAt: string; localIp: string; publicAccess: boolean; platformSupported: boolean }
 type Status = {
   configured: boolean
   signedIn: boolean
@@ -53,6 +53,7 @@ const api = {
   login: (): Promise<void> => ipcRenderer.invoke('auth:login'),
   logout: (): Promise<void> => ipcRenderer.invoke('auth:logout'),
   refreshSecurity: (): Promise<DeviceSecurityReport> => ipcRenderer.invoke('security:refresh'),
+  resetToDefaults: (): Promise<void> => ipcRenderer.invoke('app:reset'),
   onStatusChanged: (listener: (status: Status) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, status: Status): void => listener(status)
     ipcRenderer.on('status:changed', handler)

@@ -84,8 +84,8 @@ cloud-verify-device-login://oauth/callback
 工作流文件为 [`.github/workflows/windows-release.yml`](.github/workflows/windows-release.yml)。推送 `main`、推送 `v*` 标签、提交拉取请求或手动触发时，工作流执行类型检查、Native SSO 回归、Windows 外壳回归、设备安全态势回归、公共客户端 PKCE 回归与发布配置校验。
 
 ```text
-cloud-verify-device-auth-3.0.0-win-x64-setup.exe
-cloud-verify-device-auth-3.0.0-win-arm64-setup.exe
+cloud-verify-device-auth-3.0.1-win-x64-setup.exe
+cloud-verify-device-auth-3.0.1-win-arm64-setup.exe
 ```
 
 最终工件 `cloud-verify-device-auth-windows-x64-arm64.zip` 只包含上述两个 EXE 文件。工作流不引用、校验或注入任何租户 client secret。生产环境建议在受保护的签名流程中使用组织的 Authenticode 证书。

@@ -20,9 +20,11 @@
 
   function riskCopy(report) {
     if (!report) return { text: '检查中', className: 'risk-neutral', detail: '正在读取本机安全状态。' }
+    if (!report.platformSupported) return { text: '暂不支持', className: 'risk-neutral', detail: '设备安全态势仅在 Windows 设备上提供。' }
     if (report.risk === 'pass') return { text: '通过检测', className: 'risk-pass', detail: '设备登录凭据、杀毒软件、病毒库和防火墙均通过检测。' }
-    if (report.risk === 'danger') return { text: '高危风险', className: 'risk-danger', detail: `发现 ${report.issueCount} 项需要处理的安全问题。` }
-    return { text: '存在隐患', className: 'risk-warning', detail: `发现 ${report.issueCount} 项需要处理或确认的安全问题。` }
+    if (report.risk === 'danger') return { text: '高危风险', className: 'risk-danger', detail: `发现 ${report.issueCount} 项明确的安全问题。` }
+    if (report.issueCount > 0) return { text: '存在隐患', className: 'risk-warning', detail: `发现 ${report.issueCount} 项安全问题；${report.unknownCount || 0} 项状态需要重新检测。` }
+    return { text: '检测异常', className: 'risk-warning', detail: `${report.unknownCount || 0} 项系统状态暂未读取成功，请刷新检测重试。` }
   }
 
   function render(status) {

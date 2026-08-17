@@ -22,6 +22,9 @@ const TENANT_STORE_FILE = 'tenants.json'
 const SESSION_FILE = 'session.json'
 const STATUS_FLOAT_BOUNDS_FILE = 'status-float-bounds.json'
 const SECURITY_REFRESH_INTERVAL = 30 * 60 * 1000
+const STATUS_FLOAT_DEFAULT_WIDTH = 204
+const STATUS_FLOAT_DEFAULT_HEIGHT = 252
+const STATUS_FLOAT_ASPECT_RATIO = STATUS_FLOAT_DEFAULT_WIDTH / STATUS_FLOAT_DEFAULT_HEIGHT
 
 type LoginMode = 'webview' | 'browser'
 type StatusFloatBounds = { x: number; y: number; width: number; height: number }
@@ -313,14 +316,15 @@ async function startLogin(): Promise<void> {
   const url = createSignInUrl(tenant, state, codeVerifier)
   if (store.preferences.loginMode === 'browser') await shell.openExternal(url); else createAuthWindow(url)
 }
-function defaultStatusFloatBounds(): StatusFloatBounds { const area = screen.getPrimaryDisplay().workArea; return { width: 356, height: 292, x: area.x + area.width - 380, y: area.y + 42 } }
+function defaultStatusFloatBounds(): StatusFloatBounds { const area = screen.getPrimaryDisplay().workArea; return { width: STATUS_FLOAT_DEFAULT_WIDTH, height: STATUS_FLOAT_DEFAULT_HEIGHT, x: area.x + area.width - STATUS_FLOAT_DEFAULT_WIDTH - 24, y: area.y + 24 } }
 function isVisibleBounds(bounds: StatusFloatBounds): boolean { return screen.getAllDisplays().some((display) => { const area = display.workArea; return bounds.x + 100 < area.x + area.width && bounds.x + bounds.width > area.x && bounds.y + 100 < area.y + area.height && bounds.y + bounds.height > area.y }) }
 async function saveStatusFloatBounds(): Promise<void> { if (statusFloatWindow) await writeJson(STATUS_FLOAT_BOUNDS_FILE, statusFloatWindow.getBounds()) }
 async function setStatusFloatVisible(visible: boolean): Promise<void> {
   if (!visible) { statusFloatWindow?.hide(); return }
   if (!statusFloatWindow) {
-    const saved = await readJson<StatusFloatBounds>(STATUS_FLOAT_BOUNDS_FILE); const bounds = saved && saved.width >= 280 && saved.height >= 230 && isVisibleBounds(saved) ? saved : defaultStatusFloatBounds()
-    statusFloatWindow = new BrowserWindow({ ...bounds, minWidth: 280, minHeight: 230, frame: false, transparent: true, backgroundColor: '#00000000', resizable: true, movable: true, alwaysOnTop: false, skipTaskbar: true, title: '云端验证设备认证状态', icon: iconPath(), show: false, webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
+    const saved = await readJson<StatusFloatBounds>(STATUS_FLOAT_BOUNDS_FILE); const bounds = saved && saved.width >= 190 && saved.height >= 235 && isVisibleBounds(saved) ? saved : defaultStatusFloatBounds()
+    statusFloatWindow = new BrowserWindow({ ...bounds, minWidth: 190, minHeight: 235, frame: false, transparent: true, backgroundColor: '#00000000', resizable: true, movable: true, alwaysOnTop: false, skipTaskbar: true, title: '云端验证设备认证状态', icon: iconPath(), show: false, webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
+    statusFloatWindow.setAspectRatio(STATUS_FLOAT_ASPECT_RATIO)
     await attachWindowToDesktop(statusFloatWindow)
     statusFloatWindow.setAlwaysOnTop(false)
     statusFloatWindow.setVisibleOnAllWorkspaces(false)
@@ -359,6 +363,19 @@ async function deleteTenant(tenantId: string): Promise<void> {
   await writeJson(TENANT_STORE_FILE, store); publishStatus()
 }
 function applyLaunchAtLogin(enabled: boolean): void { if (process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true, args: enabled ? [START_IN_TRAY_ARGUMENT] : [] }) }
+async function resetToDefaults(): Promise<void> {
+  const result = await dialog.showMessageBox({ type: 'warning', buttons: ['重置', '取消'], defaultId: 1, cancelId: 1, title: '重置为默认状态', message: '确定重置本应用的本机状态吗？', detail: '将退出当前账户、清除本机登录信息和自定义租户，并恢复默认登录方式、系统设置及悬浮窗位置。', noLink: true })
+  if (result.response !== 0) throw new Error('已取消重置。')
+  authWindow?.close(); authWindow = null
+  await standardLogout()
+  applyLaunchAtLogin(false)
+  await Promise.all([fs.rm(appDataPath(TENANT_STORE_FILE), { force: true }), fs.rm(appDataPath(STATUS_FLOAT_BOUNDS_FILE), { force: true })])
+  securityReport = undefined
+  statusFloatWindow?.destroy(); statusFloatWindow = null
+  await setStatusFloatVisible(true)
+  lastError = ''
+  publishStatus()
+}
 function registerIpc(): void {
   ipcMain.handle('app:load', async () => { const store = await getStore(); return { tenants: listTenants(store), activeTenant: await getActiveTenant(store), preferences: store.preferences, helloAvailability: await getWindowsHelloAvailability(), status: await getStatus() } })
   ipcMain.handle('tenant:select', async (_event, tenantId: string) => selectTenant(tenantId))
@@ -373,6 +390,7 @@ function registerIpc(): void {
   ipcMain.handle('auth:status', getStatus); ipcMain.handle('auth:login', startLogin)
   ipcMain.handle('auth:logout', async () => { await standardLogout(); lastError = ''; publishStatus() })
   ipcMain.handle('security:refresh', refreshSecurityReport)
+  ipcMain.handle('app:reset', resetToDefaults)
 }
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()

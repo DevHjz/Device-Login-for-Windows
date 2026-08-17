@@ -30,7 +30,7 @@ assert.ok(fs.existsSync(path.join(root, 'src', 'main', 'windows-desktop-layer.ts
 assert.match(securityModule, /id: 'password' \| 'antivirus' \| 'signatures' \| 'firewall'/)
 assert.match(securityModule, /Get-CimInstance -Namespace root\/SecurityCenter2 -ClassName AntivirusProduct/)
 assert.match(securityModule, /Get-NetFirewallProfile/)
-assert.match(securityModule, /Test-NetConnection -ComputerName '1\.1\.1\.1' -Port 443/)
+assert.match(securityModule, /ConnectAsync\('1\.1\.1\.1', 443\)/)
 assert.match(floatHtml, /云端验证设备认证状态/)
 assert.match(floatScript, /个人用户/)
 assert.match(floatScript, /DevHjz/)
