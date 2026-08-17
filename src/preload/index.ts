@@ -69,6 +69,7 @@ const api = {
   saveTenant: (tenant: TenantInput): Promise<PublicTenant> => ipcRenderer.invoke('tenant:save', tenant),
   deleteTenant: (tenantId: string): Promise<void> => ipcRenderer.invoke('tenant:delete', tenantId),
   savePreferences: (preferences: Preferences): Promise<Preferences> => ipcRenderer.invoke('preferences:save', preferences),
+  resetToDefaults: (): Promise<void> => ipcRenderer.invoke('app:reset-defaults'),
   getStatus: (): Promise<Status> => ipcRenderer.invoke('auth:status'),
   refreshSecurity: (): Promise<DeviceSecurityReport> => ipcRenderer.invoke('security:refresh'),
   login: (): Promise<void> => ipcRenderer.invoke('auth:login'),

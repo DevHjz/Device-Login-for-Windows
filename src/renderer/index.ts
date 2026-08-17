@@ -42,6 +42,7 @@ interface Window {
     saveTenant(tenant: TenantInput): Promise<PublicTenant>
     deleteTenant(tenantId: string): Promise<void>
     savePreferences(preferences: Preferences): Promise<Preferences>
+    resetToDefaults(): Promise<void>
     getStatus(): Promise<Status>
     refreshSecurity(): Promise<DeviceSecurityReport>
     login(): Promise<void>
@@ -81,6 +82,7 @@ const elements = {
   launchAtLogin: byId<HTMLInputElement>('launch-at-login'),
   requireWindowsHello: byId<HTMLInputElement>('require-windows-hello'),
   showStatusFloat: byId<HTMLInputElement>('show-status-float'),
+  resetDefaults: byId<HTMLButtonElement>('reset-defaults'),
   helloHelp: byId<HTMLElement>('hello-help'),
   settingsMessage: byId<HTMLElement>('settings-message'),
   tenantEditor: byId<HTMLElement>('tenant-editor'),
@@ -287,6 +289,20 @@ async function savePreferences(): Promise<void> {
   }
 }
 
+async function handleResetDefaults(): Promise<void> {
+  elements.resetDefaults.disabled = true
+  setMessage(elements.settingsMessage, '正在恢复默认设置…')
+  try {
+    await window.cloudVerifyDevice.resetToDefaults()
+    await reload()
+    setMessage(elements.settingsMessage, '已恢复默认设置。请由管理员按需要完成认证配置。')
+  } catch (error) {
+    setMessage(elements.settingsMessage, error instanceof Error ? error.message : '恢复默认设置未完成。', true)
+  } finally {
+    elements.resetDefaults.disabled = false
+  }
+}
+
 async function handleLogin(): Promise<void> {
   elements.login.disabled = true
   try { await window.cloudVerifyDevice.login() } catch (error) {
@@ -330,6 +346,7 @@ function bindEvents(): void {
   elements.requireWindowsHello.addEventListener('change', () => void savePreferences())
   elements.loginMode.addEventListener('change', () => void savePreferences())
   elements.showStatusFloat.addEventListener('change', () => void savePreferences())
+  elements.resetDefaults.addEventListener('click', () => void handleResetDefaults())
   elements.login.addEventListener('click', () => void handleLogin())
   elements.logout.addEventListener('click', () => void handleLogout())
   elements.refreshStatus.addEventListener('click', () => void refreshAllStatus())

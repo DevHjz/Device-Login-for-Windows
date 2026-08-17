@@ -187,7 +187,13 @@ function defaultStore(): TenantStore {
 }
 
 async function getStore(): Promise<TenantStore> {
-  const stored = await readJson<Partial<TenantStore>>(TENANT_STORE_FILE)
+  let stored: Partial<TenantStore> | null = null
+  try {
+    stored = await readJson<Partial<TenantStore>>(TENANT_STORE_FILE)
+  } catch {
+    // 旧版本或异常中断可能留下无法解析的配置；先以安全默认值启动，供用户一键恢复。
+    lastError = '本机配置无法读取。请在系统设置中选择“恢复默认设置”。'
+  }
   const source = stored ?? defaultStore()
   return {
     activeTenantId: source.activeTenantId || BUILT_IN_TENANTS[0].id,
@@ -311,7 +317,12 @@ function isSessionExpired(stored: StoredSession): boolean {
 }
 
 async function getStoredSession(): Promise<StoredSession | null> {
-  return readJson<StoredSession>(SESSION_FILE)
+  try {
+    return await readJson<StoredSession>(SESSION_FILE)
+  } catch {
+    lastError = '本机登录信息无法读取，已停止恢复旧会话。可在系统设置中恢复默认设置。'
+    return null
+  }
 }
 
 async function clearStoredSession(): Promise<void> {
@@ -353,6 +364,34 @@ async function notifyServerLogout(stored: StoredSession | null): Promise<void> {
   } catch {
     // 无网络或服务端会话已失效时，仍继续清除本机凭据与 Cookies。
   }
+}
+
+async function resetToDefaults(): Promise<void> {
+  const result = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['恢复默认设置', '取消'],
+    defaultId: 1,
+    cancelId: 1,
+    title: '确认恢复默认设置',
+    message: '将清除本机账户、租户添加记录和系统偏好，并恢复预置租户。是否继续？',
+    detail: '此操作不会修改身份服务端的数据。',
+    noLink: true,
+  })
+  if (result.response !== 0) return
+  await stopCompanion()
+  await clearIdentityCookies()
+  await Promise.all([
+    fs.rm(appDataPath(TENANT_STORE_FILE), { force: true }),
+    fs.rm(appDataPath(SESSION_FILE), { force: true }),
+    fs.rm(appDataPath(BOOT_MARKER_FILE), { force: true }),
+    fs.rm(appDataPath(STATUS_FLOAT_BOUNDS_FILE), { force: true }),
+  ])
+  const store = defaultStore()
+  await writeJson(TENANT_STORE_FILE, store)
+  applyLaunchAtLogin(false)
+  await setStatusFloatVisible(store.preferences.showStatusFloat)
+  lastError = ''
+  publishStatus()
 }
 
 async function signOutCurrentSession(): Promise<void> {
@@ -771,6 +810,7 @@ function registerIpc(): void {
     return store.preferences
   })
   ipcMain.handle('auth:status', getStatus)
+  ipcMain.handle('app:reset-defaults', resetToDefaults)
   ipcMain.handle('security:refresh', refreshSecurityReport)
   ipcMain.handle('auth:login', beginLogin)
   ipcMain.handle('auth:logout', async () => {

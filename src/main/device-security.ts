@@ -73,7 +73,7 @@ function buildReport(data: RawSecurityData): DeviceSecurityReport {
       id: 'bitlocker',
       title: 'C 盘 BitLocker',
       state: bitLockerProtected === true ? 'pass' : bitLockerProtected === false ? 'warning' : 'unknown',
-      detail: bitLockerProtected === true ? '系统盘已启用 BitLocker 保护。' : bitLockerProtected === false ? '系统盘未启用 BitLocker 保护。' : '无法确认系统盘 BitLocker 状态。',
+      detail: bitLockerProtected === true ? '系统盘已启用 BitLocker 保护。' : bitLockerProtected === false ? '系统盘未启用 BitLocker 保护。' : '无法确认系统盘 BitLocker 状态，已从安全态势评分中忽略。',
     },
     {
       id: 'antivirus',
@@ -100,7 +100,8 @@ function buildReport(data: RawSecurityData): DeviceSecurityReport {
     },
   ]
 
-  const issueCount = checks.filter((check) => check.state !== 'pass').length
+  // BitLocker 在部分 Windows 版本、策略环境或非专业版系统中无法读取；此时只展示，不影响风险分级。
+  const issueCount = checks.filter((check) => check.state !== 'pass' && !(check.id === 'bitlocker' && check.state === 'unknown')).length
   const risk = issueCount === 0 ? 'pass' : issueCount <= 3 ? 'warning' : 'danger'
   return {
     checks,
