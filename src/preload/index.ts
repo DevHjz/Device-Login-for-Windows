@@ -44,6 +44,7 @@ type Status = {
   activeTenantOrgName?: string
   requireWindowsHello: boolean
   loginMode: 'webview' | 'browser'
+  floatOpacity: number
   securityReport?: DeviceSecurityReport
 }
 type TenantInput = { displayName?: string; endpoint?: string; clientId?: string; orgName?: string; appName?: string; certificate?: string; allowedOrigins?: string[]; deviceName?: string }

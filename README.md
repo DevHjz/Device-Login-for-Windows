@@ -56,7 +56,7 @@ cloud-verify-device-login://oauth/callback
 | 杀毒软件 | `Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct`，解析 `productState` | 适用于 Defender、360、火绒等向 Windows Security Center 注册的产品。 |
 | 病毒库 | `Get-MpComputerStatus` 的 Defender 签名更新时间；其它产品使用 Security Center `productState` 作有限判断 | Defender 超过 7 天或明确过期时标为隐患；若已启用非 Defender 第三方杀毒软件，则此项状态不计入风险。 |
 | Windows 防火墙 | `Get-NetFirewallProfile -PolicyStore ActiveStore`，读取 Domain、Private、Public 配置文件 | 任一配置文件未启用时标为隐患。 |
-| 网络 | `Get-NetIPAddress -AddressFamily IPv4`；保留 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16` 私网地址，并用 `Test-NetConnection 172.64.36.1` 探测公网连通性 | 可联通时显示“（公网）”。 |
+| 网络 | `Get-NetIPAddress -AddressFamily IPv4` 配合已启用网络适配器状态；保留 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16` 私网地址，并用 `Test-NetConnection 172.64.36.1` 探测公网连通性 | 网络接口或 IPv4 变化后自动刷新；无可用网络时显示“网络未连接”，可联通时显示“（公网）”。 |
 
 检测由应用通过 `powershell.exe -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand …` 在本机执行，**不调用云端安全检测 API**。检测结果会先 `ConvertTo-Json`，再以 UTF-8 Base64 输出，避免 PowerShell 控制台代码页造成中文乱码。
 
@@ -64,13 +64,13 @@ cloud-verify-device-login://oauth/callback
 
 ## 五、桌面状态悬浮窗
 
-默认显示“云端验证设备认证状态”悬浮窗，默认尺寸为 **200 × 210 px**。可在系统设置中关闭或重新开启；窗口位置与大小会保存，支持手动拖动标题区域和在边缘调整尺寸。系统设置可用像素数值设置宽度或高度，另一维会按固定比例自动换算；还可设置 35%–100% 的透明度，并锁定悬浮窗以禁止移动和调整大小。悬浮窗包含下列内容：
+默认显示“云端验证设备认证状态”悬浮窗，默认尺寸为 **200 × 210 px**。可在系统设置中关闭或重新开启；窗口位置与大小会保存，支持手动拖动标题区域和在边缘调整尺寸。系统设置可用像素数值设置宽度或高度，另一维会按固定比例自动换算；还可设置 35%–100% 的**背景透明度**，文字和图标始终保持完全不透明，并可锁定悬浮窗以禁止移动和调整大小。悬浮窗包含下列内容：
 
 | 字段 | 展示规则 |
 | --- | --- |
 | 登录用户 | 显示账户昵称；鼠标悬停显示用户名。 |
 | 所属租户 | 显示租户名称；鼠标悬停显示组织名称。 |
-| 租户网域 | 个人邮箱域名显示“个人用户”；其它显示完整邮箱后缀，其中 `devhjz` 字样仅标准化为 `DevHjz`，例如 `sso.devhjz.com` 显示为 `sso.DevHjz.com`。 |
+| 租户网域 | 未登录时显示 `Localhost`；个人邮箱域名显示“个人用户”；其它显示完整邮箱后缀，其中 `devhjz` 字样仅标准化为 `DevHjz`，例如 `sso.devhjz.com` 显示为 `sso.DevHjz.com`。 |
 | IP 地址 | 显示优先局域网 IPv4；可联通公网时追加“（公网）”。 |
 | 安全认证 | 绿色“通过检测”、黄色“存在隐患”、红色“高危风险”；鼠标悬停显示五项检查详情。 |
 
@@ -87,8 +87,8 @@ cloud-verify-device-login://oauth/callback
 工作流文件为 [`.github/workflows/windows-release.yml`](.github/workflows/windows-release.yml)。推送 `main`、推送 `v*` 标签、提交拉取请求或手动触发时，工作流执行类型检查、Native SSO 回归、Windows 外壳回归、设备安全态势回归、公共客户端 PKCE 回归与发布配置校验。
 
 ```text
-cloud-verify-device-auth-3.0.5-win-x64-setup.exe
-cloud-verify-device-auth-3.0.5-win-arm64-setup.exe
+cloud-verify-device-auth-3.0.6-win-x64-setup.exe
+cloud-verify-device-auth-3.0.6-win-arm64-setup.exe
 ```
 
 最终工件 `cloud-verify-device-auth-windows-x64-arm64.zip` 只包含上述两个 EXE 文件。工作流不引用、校验或注入任何租户 client secret。生产环境建议在受保护的签名流程中使用组织的 Authenticode 证书。

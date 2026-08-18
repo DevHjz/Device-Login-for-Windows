@@ -18,7 +18,7 @@ type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' 
 type Status = {
   configured: boolean; signedIn: boolean; companionRunning: boolean; userName?: string; displayName?: string; email?: string; devicePort?: number
   lastError?: string; activeTenantId?: string; activeTenantName?: string; activeTenantOrgName?: string
-  requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; securityReport?: DeviceSecurityReport
+  requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; floatOpacity: number; securityReport?: DeviceSecurityReport
 }
 type AppData = { tenants: PublicTenant[]; activeTenant: PublicTenant; preferences: Preferences; helloAvailability: HelloAvailability; status: Status }
 type TenantInput = Partial<Omit<PublicTenant, 'source'>> & { allowedOrigins?: string[] }
@@ -295,10 +295,10 @@ function bindEvents(): void {
 
 async function initialize(): Promise<void> {
   bindEvents()
-  if (!window.cloudVerifyDevice) { renderStatus({ configured: false, signedIn: false, companionRunning: false, lastError: '应用组件未正确加载。请退出后重新启动应用。', requireWindowsHello: false, loginMode: 'webview' }); return }
+  if (!window.cloudVerifyDevice) { renderStatus({ configured: false, signedIn: false, companionRunning: false, lastError: '应用组件未正确加载。请退出后重新启动应用。', requireWindowsHello: false, loginMode: 'webview', floatOpacity: 88 }); return }
   window.cloudVerifyDevice.onStatusChanged(renderStatus)
   try { await reload() }
-  catch { renderStatus({ configured: false, signedIn: false, companionRunning: false, lastError: '无法读取本机配置，请重新启动应用。', requireWindowsHello: false, loginMode: 'webview' }) }
+  catch { renderStatus({ configured: false, signedIn: false, companionRunning: false, lastError: '无法读取本机配置，请重新启动应用。', requireWindowsHello: false, loginMode: 'webview', floatOpacity: 88 }) }
 }
 
 document.addEventListener('DOMContentLoaded', () => void initialize())

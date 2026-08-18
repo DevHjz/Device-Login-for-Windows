@@ -5,7 +5,7 @@
   ])
   const byId = (id) => document.getElementById(id)
   const elements = {
-    user: byId('float-user'), tenant: byId('float-tenant'), domain: byId('float-domain'), ip: byId('float-ip'),
+    card: document.querySelector('.float-card'), user: byId('float-user'), tenant: byId('float-tenant'), domain: byId('float-domain'), ip: byId('float-ip'),
     security: byId('float-security'), login: byId('float-login'), refresh: byId('float-refresh'),
   }
   let latestStatus = null
@@ -29,17 +29,19 @@
     latestStatus = status
     const report = status.securityReport
     const risk = riskCopy(report)
+    const opacity = Math.min(100, Math.max(35, Number(status.floatOpacity) || 88))
+    elements.card?.style.setProperty('--float-background-opacity', String(opacity / 100))
     const userName = status.userName || ''
     elements.user.textContent = status.signedIn ? (status.displayName || userName || '已登录') : '未登录'
     elements.user.title = userName || '未登录'
     elements.tenant.textContent = status.activeTenantName || '—'
     elements.tenant.title = status.activeTenantOrgName || '未获取租户组织'
     const email = status.email || (userName.includes('@') ? userName : '')
-    const domain = domainLabel(email)
+    const domain = status.signedIn ? domainLabel(email) : 'Localhost'
     elements.domain.textContent = domain
-    elements.domain.title = email || '身份服务未返回 email 字段；请确认账户已填写邮箱且应用已启用 email scope。'
+    elements.domain.title = status.signedIn ? (email || '身份服务未返回 email 字段；请确认账户已填写邮箱且应用已启用 email scope。') : '当前设备本机状态'
     elements.ip.textContent = report ? `${report.localIp}${report.publicAccess ? '（公网）' : ''}` : '正在检测'
-    elements.ip.title = report?.publicAccess ? '已检测到公网连通性。显示标签为“公网”。' : '未检测到公网连通性或仍在检测。'
+    elements.ip.title = !report ? '正在读取网络状态。' : report.localIp === '网络未连接' ? '未检测到可用的网络连接。' : report.publicAccess ? '已检测到公网连通性。显示标签为“公网”。' : '已连接局域网，未检测到公网连通性。'
     elements.security.textContent = risk.text
     elements.security.title = report ? report.checks.map((check) => `${check.title}：${check.detail}`).join('\n') : risk.detail
     elements.security.style.color = risk.color

@@ -42,7 +42,7 @@ type PendingLoginRequest = { tenantId: string; codeVerifier: string; timeout: No
 type Status = {
   configured: boolean; signedIn: boolean; companionRunning: boolean; userName?: string; displayName?: string; email?: string; devicePort?: number
   lastError?: string; activeTenantId?: string; activeTenantName?: string; activeTenantOrgName?: string
-  requireWindowsHello: boolean; loginMode: LoginMode; securityReport?: DeviceSecurityReport
+  requireWindowsHello: boolean; loginMode: LoginMode; floatOpacity: number; securityReport?: DeviceSecurityReport
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -53,6 +53,8 @@ let companion: NativeSsoService | null = null
 let companionPort: number | null = null
 let sessionExpiryTimer: NodeJS.Timeout | null = null
 let securityRefreshTimer: NodeJS.Timeout | null = null
+let networkChangeWatchTimer: NodeJS.Timeout | null = null
+let networkChangeRefreshTimer: NodeJS.Timeout | null = null
 let statusFloatBoundsSaveTimer: NodeJS.Timeout | null = null
 let securityReport: DeviceSecurityReport | undefined
 const pendingLoginRequests = new Map<string, PendingLoginRequest>()
@@ -281,6 +283,23 @@ async function hydrateSessionEmail(stored: StoredSession, tenant: Tenant): Promi
 }
 async function refreshSecurityReport(): Promise<DeviceSecurityReport> { securityReport = await collectDeviceSecurityReport(); publishStatus(); return securityReport }
 function scheduleSecurityRefresh(): void { if (securityRefreshTimer) clearInterval(securityRefreshTimer); securityRefreshTimer = setInterval(() => { void refreshSecurityReport() }, SECURITY_REFRESH_INTERVAL) }
+function currentNetworkFingerprint(): string {
+  return Object.entries(os.networkInterfaces()).flatMap(([name, addresses]) => (addresses ?? [])
+    .filter((address) => address.family === 'IPv4' && !address.internal)
+    .map((address) => `${name}:${address.address}:${address.netmask}`)).sort().join('|')
+}
+function scheduleNetworkChangeRefresh(): void {
+  if (networkChangeWatchTimer) clearInterval(networkChangeWatchTimer)
+  let previousFingerprint = currentNetworkFingerprint()
+  networkChangeWatchTimer = setInterval(() => {
+    const nextFingerprint = currentNetworkFingerprint()
+    if (nextFingerprint === previousFingerprint) return
+    previousFingerprint = nextFingerprint
+    if (networkChangeRefreshTimer) clearTimeout(networkChangeRefreshTimer)
+    // 等待 DHCP、VPN 或 Wi-Fi 切换完成后再读取 PowerShell 网络接口，避免采集到中间状态。
+    networkChangeRefreshTimer = setTimeout(() => { void refreshSecurityReport() }, 1_000)
+  }, 2_000)
+}
 async function getStatus(): Promise<Status> {
   const store = await getStore(); const tenant = listTenants(store).find((item) => item.id === store.activeTenantId); const stored = await getStoredSession(); let currentSession = stored?.tenantId === store.activeTenantId ? stored : null
   if (currentSession && tenant && !isSessionExpired(currentSession)) currentSession = await hydrateSessionEmail(currentSession, tenant)
@@ -288,7 +307,7 @@ async function getStatus(): Promise<Status> {
     configured: Boolean(tenant?.clientId && tenant?.certificate), signedIn: Boolean(currentSession && !isSessionExpired(currentSession)), companionRunning,
     userName: currentSession?.userName, displayName: currentSession?.displayName, email: currentSession?.email, devicePort: companionRunning ? companionPort ?? undefined : undefined,
     lastError: lastError || undefined, activeTenantId: tenant?.id, activeTenantName: tenant?.displayName, activeTenantOrgName: tenant?.orgName,
-    requireWindowsHello: store.preferences.requireWindowsHello, loginMode: store.preferences.loginMode, securityReport,
+    requireWindowsHello: store.preferences.requireWindowsHello, loginMode: store.preferences.loginMode, floatOpacity: store.preferences.floatOpacity, securityReport,
   }
 }
 function publishStatus(): void { void getStatus().then((status) => { mainWindow?.webContents.send('status:changed', status); statusFloatWindow?.webContents.send('status:changed', status) }) }
@@ -360,7 +379,6 @@ function applyStatusFloatPreferences(window: BrowserWindow, preferences: Prefere
   window.setMinimumSize(STATUS_FLOAT_MIN_WIDTH, STATUS_FLOAT_MIN_HEIGHT)
   window.setAspectRatio(STATUS_FLOAT_ASPECT_RATIO)
   if (window.getBounds().width !== size.width || window.getBounds().height !== size.height) window.setSize(size.width, size.height)
-  window.setOpacity(preferences.floatOpacity / 100)
   window.setMovable(!preferences.lockStatusFloat)
   window.setResizable(!preferences.lockStatusFloat)
 }
@@ -472,12 +490,12 @@ else {
     app.setName(PRODUCT_NAME); app.setAppUserModelId(APP_USER_MODEL_ID); Menu.setApplicationMenu(null)
     const loginItemSettings = app.getLoginItemSettings(); launchInTray = launchInTray || Boolean(loginItemSettings.wasOpenedAtLogin)
     registerProtocol(); registerIpc(); const store = await getStore(); applyLaunchAtLogin(store.preferences.launchAtLogin); createTray()
-    const restarted = await invalidateSessionAfterSystemRestart(); scheduleSecurityRefresh(); void refreshSecurityReport(); await setStatusFloatVisible(store.preferences.showStatusFloat)
+    const restarted = await invalidateSessionAfterSystemRestart(); scheduleSecurityRefresh(); scheduleNetworkChangeRefresh(); void refreshSecurityReport(); await setStatusFloatVisible(store.preferences.showStatusFloat)
     if (!launchInTray) { createMainWindow(); if (!restarted) await restoreSession() }
     else if (store.preferences.loginMode === 'webview') { await startLogin().catch((error) => { lastError = userFacingError(error); publishStatus() }) }
     else if (!restarted) await restoreSession()
     publishStatus(); const startupCallback = extractProtocolUrl(process.argv); if (startupCallback) await handleProtocolUrl(startupCallback); app.on('activate', showMainWindow)
   })
   app.on('window-all-closed', () => undefined)
-  app.on('before-quit', () => { isQuitting = true; if (securityRefreshTimer) clearInterval(securityRefreshTimer); if (statusFloatBoundsSaveTimer) clearTimeout(statusFloatBoundsSaveTimer); void stopCompanion() })
+  app.on('before-quit', () => { isQuitting = true; if (securityRefreshTimer) clearInterval(securityRefreshTimer); if (networkChangeWatchTimer) clearInterval(networkChangeWatchTimer); if (networkChangeRefreshTimer) clearTimeout(networkChangeRefreshTimer); if (statusFloatBoundsSaveTimer) clearTimeout(statusFloatBoundsSaveTimer); void stopCompanion() })
 }

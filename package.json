@@ -1,11 +1,11 @@
 {
   "name": "cloud-verify-device-auth",
-  "version": "3.0.5",
+  "version": "3.0.6",
   "private": true,
   "description": "Cloud Verify Device Auth for Windows",
   "main": "dist/main/index.js",
   "license": "Apache-2.0",
-  "author": "devhjz",
+  "author": "DevHjz",
   "scripts": {
     "build:ts": "tsc -p tsconfig.json",
     "copy:renderer": "node scripts/copy-static.cjs",

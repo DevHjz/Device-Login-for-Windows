@@ -97,7 +97,7 @@ function buildReport(data: RawSecurityData, platformSupported = true): DeviceSec
   // 系统接口暂未返回的项目仅供详情展示，不应被当作设备风险或向用户显示为检测异常。
   const risk = issueCount === 0 ? 'pass' : issueCount > 2 ? 'danger' : 'warning'
   return {
-    checks, risk, issueCount, unknownCount, checkedAt: new Date().toISOString(), localIp: asText(data.localIp) || '未获取到', publicAccess: data.publicAccess === true,
+    checks, risk, issueCount, unknownCount, checkedAt: new Date().toISOString(), localIp: asText(data.localIp) || '网络未连接', publicAccess: asText(data.localIp) !== '' && data.publicAccess === true,
     platformSupported: data.platformSupported !== false && platformSupported,
   }
 }
@@ -185,17 +185,22 @@ try {
   else { $result.firewall.detail = '未读取到完整的 Domain、Private、Public 防火墙配置文件。' }
 } catch { $result.firewall.detail = $_.Exception.Message }
 
-# Get-NetIPAddress 返回本机 IPv4；明确保留 RFC 1918 私网地址（10/8、172.16/12、192.168/16）。
+# Get-NetIPAddress 返回本机 IPv4；只接受状态为 Up 的网络适配器，并明确保留 RFC 1918 私网地址（10/8、172.16/12、192.168/16）。
 try {
-  $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { [string]$_.IPAddress } | Where-Object {
+  $activeIfIndex = @((Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { [int]$_.ifIndex }))
+  $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Where-Object {
+    $_.ifIndex -in $activeIfIndex -and $_.AddressState -eq 'Preferred'
+  } | ForEach-Object { [string]$_.IPAddress } | Where-Object {
     $_ -notmatch '^(127\\.|169\\.254\\.|0\\.|2(2[4-9]|[3-5][0-9])\\.|255\\.)'
   })
   $private = @($ips | Where-Object { $_ -like '10.*' -or $_ -like '192.168.*' -or $_ -match '^172\\.(1[6-9]|2[0-9]|3[0-1])\\.' })
   $result.localIp = [string](@($private + $ips | Select-Object -Unique | Select-Object -First 1))
 } catch {}
 
-try { $result.publicAccess = [bool](Test-NetConnection -ComputerName 172.64.36.1 -InformationLevel Quiet -ErrorAction Stop) }
-catch { $result.publicAccess = $false }
+if ($result.localIp) {
+  try { $result.publicAccess = [bool](Test-NetConnection -ComputerName 172.64.36.1 -InformationLevel Quiet -ErrorAction Stop) }
+  catch { $result.publicAccess = $false }
+}
 
 $json = $result | ConvertTo-Json -Depth 7 -Compress
 [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))

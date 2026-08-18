@@ -1,7 +1,9 @@
 :root { color-scheme: light; font-family: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif; color: #173b5d; }
 * { box-sizing: border-box; }
 html, body { width: 100%; min-width: 0; min-height: 0; margin: 0; background: transparent; }
-.float-card { width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 8px; border: 1px solid rgba(132, 190, 239, .82); border-radius: 13px; background: rgba(222, 243, 255, .86); box-shadow: 0 9px 22px rgba(25, 82, 128, .24); backdrop-filter: blur(12px); }
+.float-card { --float-background-opacity: .88; position: relative; width: 100%; min-width: 0; min-height: 0; margin: 0; border-radius: 13px; }
+.float-background { position: absolute; inset: 0; z-index: 0; border: 1px solid rgb(132 190 239 / var(--float-background-opacity)); border-radius: 13px; background: rgb(222 243 255 / var(--float-background-opacity)); box-shadow: 0 9px 22px rgb(25 82 128 / .24); backdrop-filter: blur(12px); pointer-events: none; }
+.float-content { position: relative; z-index: 1; padding: 8px; }
 .float-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 5px; padding: 1px 1px 6px; cursor: move; -webkit-app-region: drag; user-select: none; }
 .float-header p { margin: 0 0 1px; color: #4e83ad; font-size: 8px; font-weight: 800; letter-spacing: .07em; }
 h1 { margin: 0; color: #224d72; font-size: 11px; letter-spacing: 0; line-height: 1.28; white-space: nowrap; }
