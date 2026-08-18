@@ -40,10 +40,15 @@
     const domain = status.signedIn ? domainLabel(email) : 'Localhost'
     elements.domain.textContent = domain
     elements.domain.title = status.signedIn ? (email || '身份服务未返回 email 字段；请确认账户已填写邮箱且应用已启用 email scope。') : '当前设备本机状态'
-    elements.ip.textContent = report ? `${report.localIp}${report.publicAccess ? '（公网）' : ''}` : '正在检测'
-    elements.ip.title = !report ? '正在读取网络状态。' : report.localIp === '网络未连接' ? '未检测到可用的网络连接。' : report.publicAccess ? '已检测到公网连通性。显示标签为“公网”。' : '已连接局域网，未检测到公网连通性。'
-    elements.security.textContent = risk.text
-    elements.security.title = report ? report.checks.map((check) => `${check.title}：${check.detail}`).join('\n') : risk.detail
+    elements.ip.textContent = report?.localIp || '正在检测'
+    elements.ip.title = !report ? '正在读取网络状态。' : report.localIp === '网络未连接' ? '未检测到可用的网络连接。' : '当前设备的局域网 IPv4 地址。'
+    const accessText = !report ? '网络检测中' : report.localIp === '网络未连接' ? '网络未连接' : report.publicAccess ? '公网访问' : '内网访问'
+    const accessClass = !report || report.localIp === '网络未连接' ? 'network-state-neutral' : report.publicAccess ? 'network-state-public' : 'network-state-private'
+    const access = document.createElement('span')
+    access.className = `network-state ${accessClass}`
+    access.textContent = accessText
+    elements.security.replaceChildren(document.createTextNode(`${risk.text} | `), access)
+    elements.security.title = report ? `${report.checks.map((check) => `${check.title}：${check.detail}`).join('\n')}\n网络访问：${accessText}` : risk.detail
     elements.security.style.color = risk.color
     const signedIn = Boolean(status.signedIn)
     elements.login.classList.toggle('is-logout', signedIn)

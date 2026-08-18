@@ -25,7 +25,7 @@ type Preferences = {
   floatOpacity: number
   lockStatusFloat: boolean
 }
-type PreferenceInput = Partial<Preferences> & { floatSizeSource?: 'width' | 'height' }
+type PreferenceInput = Partial<Preferences>
 
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }

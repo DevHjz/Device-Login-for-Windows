@@ -23,19 +23,18 @@ const SESSION_FILE = 'session.json'
 const STATUS_FLOAT_BOUNDS_FILE = 'status-float-bounds.json'
 const SECURITY_REFRESH_INTERVAL = 30 * 60 * 1000
 const STATUS_FLOAT_DEFAULT_WIDTH = 200
-const STATUS_FLOAT_DEFAULT_HEIGHT = 210
-const STATUS_FLOAT_ASPECT_RATIO = STATUS_FLOAT_DEFAULT_WIDTH / STATUS_FLOAT_DEFAULT_HEIGHT
-const STATUS_FLOAT_MIN_HEIGHT = 180
-const STATUS_FLOAT_MIN_WIDTH = Math.ceil(STATUS_FLOAT_MIN_HEIGHT * STATUS_FLOAT_ASPECT_RATIO)
+const STATUS_FLOAT_DEFAULT_HEIGHT = 200
+const STATUS_FLOAT_MIN_WIDTH = 160
+const STATUS_FLOAT_MIN_HEIGHT = 160
 const STATUS_FLOAT_MAX_WIDTH = 720
+const STATUS_FLOAT_MAX_HEIGHT = 720
 
 type LoginMode = 'webview' | 'browser'
 type StatusFloatBounds = { x: number; y: number; width: number; height: number }
-type StatusFloatSizeSource = 'width' | 'height'
 type Tenant = TenantPreset & { createdAt: string; updatedAt: string; source: 'built-in' | 'custom' }
 type TenantInput = { displayName?: string; endpoint?: string; clientId?: string; orgName?: string; appName?: string; certificate?: string; allowedOrigins?: unknown; deviceName?: string }
 type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: LoginMode; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean }
-type PreferenceInput = Partial<Preferences> & { floatSizeSource?: StatusFloatSizeSource }
+type PreferenceInput = Partial<Preferences>
 type TenantStore = { activeTenantId: string; customTenants: Tenant[]; deletedBuiltInTenantIds: string[]; preferences: Preferences }
 type StoredSession = { tenantId: string; accessTokenEncrypted: string; refreshTokenEncrypted?: string; deviceSecretEncrypted?: string; userName: string; displayName: string; email?: string; emailLookupAttempted?: boolean; avatar: string; expiresAt?: number; bootMarker: string }
 type PendingLoginRequest = { tenantId: string; codeVerifier: string; timeout: NodeJS.Timeout }
@@ -103,16 +102,15 @@ function defaultTenant(id: string): Tenant {
   const timestamp = new Date().toISOString()
   return { ...preset, createdAt: timestamp, updatedAt: timestamp, source: 'built-in' }
 }
-function statusFloatHeightForWidth(width: number): number { return Math.round(width / STATUS_FLOAT_ASPECT_RATIO) }
-function statusFloatWidthForHeight(height: number): number { return Math.round(height * STATUS_FLOAT_ASPECT_RATIO) }
-function normalizeStatusFloatWidth(value: unknown): number {
+function normalizeStatusFloatDimension(value: unknown, fallback: number, minimum: number, maximum: number): number {
   const numeric = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(numeric)) return STATUS_FLOAT_DEFAULT_WIDTH
-  return Math.min(STATUS_FLOAT_MAX_WIDTH, Math.max(STATUS_FLOAT_MIN_WIDTH, Math.round(numeric)))
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(maximum, Math.max(minimum, Math.round(numeric)))
 }
-function statusFloatSizeFromPreferences(preferences: Pick<Preferences, 'floatWidth'>): Pick<StatusFloatBounds, 'width' | 'height'> {
-  const width = normalizeStatusFloatWidth(preferences.floatWidth)
-  return { width, height: statusFloatHeightForWidth(width) }
+function normalizeStatusFloatWidth(value: unknown): number { return normalizeStatusFloatDimension(value, STATUS_FLOAT_DEFAULT_WIDTH, STATUS_FLOAT_MIN_WIDTH, STATUS_FLOAT_MAX_WIDTH) }
+function normalizeStatusFloatHeight(value: unknown): number { return normalizeStatusFloatDimension(value, STATUS_FLOAT_DEFAULT_HEIGHT, STATUS_FLOAT_MIN_HEIGHT, STATUS_FLOAT_MAX_HEIGHT) }
+function statusFloatSizeFromPreferences(preferences: Pick<Preferences, 'floatWidth' | 'floatHeight'>): Pick<StatusFloatBounds, 'width' | 'height'> {
+  return { width: normalizeStatusFloatWidth(preferences.floatWidth), height: normalizeStatusFloatHeight(preferences.floatHeight) }
 }
 function normalizeStatusFloatOpacity(value: unknown): number {
   const numeric = typeof value === 'number' ? value : Number(value)
@@ -144,7 +142,7 @@ async function getStore(): Promise<TenantStore> {
     preferences: {
       launchAtLogin: Boolean(rawPreferences.launchAtLogin), requireWindowsHello: Boolean(rawPreferences.requireWindowsHello),
       loginMode: rawPreferences.loginMode === 'browser' ? 'browser' : 'webview', showStatusFloat: rawPreferences.showStatusFloat !== false,
-      floatWidth: normalizeStatusFloatWidth(rawPreferences.floatWidth), floatHeight: statusFloatHeightForWidth(normalizeStatusFloatWidth(rawPreferences.floatWidth)), floatOpacity: normalizeStatusFloatOpacity(rawPreferences.floatOpacity), lockStatusFloat: Boolean(rawPreferences.lockStatusFloat),
+      floatWidth: normalizeStatusFloatWidth(rawPreferences.floatWidth), floatHeight: normalizeStatusFloatHeight(rawPreferences.floatHeight), floatOpacity: normalizeStatusFloatOpacity(rawPreferences.floatOpacity), lockStatusFloat: Boolean(rawPreferences.lockStatusFloat),
     },
   }
   // 3.0 不再支持编辑内置租户，也不保留历史共享密钥字段。
@@ -359,7 +357,7 @@ function createMainWindow(): void {
 }
 function createAuthWindow(url: string): void {
   authWindow?.close()
-  authWindow = new BrowserWindow({ width: 540, height: 760, minWidth: 440, minHeight: 620, title: '账户登录', icon: iconPath(), backgroundColor: '#ffffff', parent: mainWindow ?? undefined, modal: Boolean(mainWindow?.isVisible()), show: true, webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } })
+  authWindow = new BrowserWindow({ width: 735, height: 593, minWidth: 520, minHeight: 460, title: '账户登录', icon: iconPath(), backgroundColor: '#ffffff', parent: mainWindow ?? undefined, modal: Boolean(mainWindow?.isVisible()), show: true, webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } })
   const capture = (target: string): void => { if (isProtocolUrl(target)) void handleProtocolUrl(target).catch((error) => { lastError = userFacingError(error); publishStatus() }) }
   authWindow.webContents.on('will-navigate', (event, target) => { if (isProtocolUrl(target)) { event.preventDefault(); capture(target) } })
   authWindow.webContents.on('will-redirect', (event, target) => { if (isProtocolUrl(target)) { event.preventDefault(); capture(target) } })
@@ -377,7 +375,7 @@ function isVisibleBounds(bounds: StatusFloatBounds): boolean { return screen.get
 function applyStatusFloatPreferences(window: BrowserWindow, preferences: Preferences): void {
   const size = statusFloatSizeFromPreferences(preferences)
   window.setMinimumSize(STATUS_FLOAT_MIN_WIDTH, STATUS_FLOAT_MIN_HEIGHT)
-  window.setAspectRatio(STATUS_FLOAT_ASPECT_RATIO)
+  window.setMaximumSize(STATUS_FLOAT_MAX_WIDTH, STATUS_FLOAT_MAX_HEIGHT)
   if (window.getBounds().width !== size.width || window.getBounds().height !== size.height) window.setSize(size.width, size.height)
   window.setMovable(!preferences.lockStatusFloat)
   window.setResizable(!preferences.lockStatusFloat)
@@ -389,7 +387,7 @@ async function saveStatusFloatBounds(): Promise<void> {
   const store = await getStore()
   if (!store.preferences.lockStatusFloat && (store.preferences.floatWidth !== bounds.width || store.preferences.floatHeight !== bounds.height)) {
     store.preferences.floatWidth = normalizeStatusFloatWidth(bounds.width)
-    store.preferences.floatHeight = statusFloatHeightForWidth(store.preferences.floatWidth)
+    store.preferences.floatHeight = normalizeStatusFloatHeight(bounds.height)
     await writeJson(TENANT_STORE_FILE, store)
   }
 }
@@ -404,8 +402,7 @@ async function setStatusFloatVisible(visible: boolean): Promise<void> {
   const store = await getStore()
   if (!statusFloatWindow) {
     const saved = await readJson<StatusFloatBounds>(STATUS_FLOAT_BOUNDS_FILE); const position = saved && isVisibleBounds(saved) ? saved : defaultStatusFloatBounds(store.preferences); const size = statusFloatSizeFromPreferences(store.preferences); const bounds = { x: position.x, y: position.y, ...size }
-    statusFloatWindow = new BrowserWindow({ ...bounds, minWidth: STATUS_FLOAT_MIN_WIDTH, minHeight: STATUS_FLOAT_MIN_HEIGHT, frame: false, transparent: true, backgroundColor: '#00000000', resizable: !store.preferences.lockStatusFloat, movable: !store.preferences.lockStatusFloat, alwaysOnTop: false, skipTaskbar: true, title: '云端验证设备认证状态', icon: iconPath(), show: false, webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
-    statusFloatWindow.setAspectRatio(STATUS_FLOAT_ASPECT_RATIO)
+    statusFloatWindow = new BrowserWindow({ ...bounds, minWidth: STATUS_FLOAT_MIN_WIDTH, minHeight: STATUS_FLOAT_MIN_HEIGHT, maxWidth: STATUS_FLOAT_MAX_WIDTH, maxHeight: STATUS_FLOAT_MAX_HEIGHT, frame: false, transparent: true, backgroundColor: '#00000000', resizable: !store.preferences.lockStatusFloat, movable: !store.preferences.lockStatusFloat, alwaysOnTop: false, skipTaskbar: true, title: '云端验证设备认证状态', icon: iconPath(), show: false, webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
     await attachWindowToDesktop(statusFloatWindow)
     statusFloatWindow.setAlwaysOnTop(false)
     statusFloatWindow.setVisibleOnAllWorkspaces(false)
@@ -467,12 +464,12 @@ function registerIpc(): void {
   ipcMain.handle('preferences:save', async (_event, input: PreferenceInput) => {
     const store = await getStore(); const nextHello = input.requireWindowsHello === undefined ? store.preferences.requireWindowsHello : Boolean(input.requireWindowsHello)
     if (nextHello !== store.preferences.requireWindowsHello) await verifyWithWindowsHello('确认更改登录授权验证设置')
-    const requestedWidth = input.floatSizeSource === 'height' ? statusFloatWidthForHeight(Number(input.floatHeight)) : input.floatWidth === undefined ? store.preferences.floatWidth : Number(input.floatWidth)
-    const floatWidth = normalizeStatusFloatWidth(requestedWidth)
+    const floatWidth = input.floatWidth === undefined ? store.preferences.floatWidth : normalizeStatusFloatWidth(input.floatWidth)
+    const floatHeight = input.floatHeight === undefined ? store.preferences.floatHeight : normalizeStatusFloatHeight(input.floatHeight)
     store.preferences = {
       launchAtLogin: input.launchAtLogin === undefined ? store.preferences.launchAtLogin : Boolean(input.launchAtLogin), requireWindowsHello: nextHello,
       loginMode: input.loginMode === 'browser' ? 'browser' : 'webview', showStatusFloat: input.showStatusFloat === undefined ? store.preferences.showStatusFloat : Boolean(input.showStatusFloat),
-      floatWidth, floatHeight: statusFloatHeightForWidth(floatWidth), floatOpacity: input.floatOpacity === undefined ? store.preferences.floatOpacity : normalizeStatusFloatOpacity(input.floatOpacity), lockStatusFloat: input.lockStatusFloat === undefined ? store.preferences.lockStatusFloat : Boolean(input.lockStatusFloat),
+      floatWidth, floatHeight, floatOpacity: input.floatOpacity === undefined ? store.preferences.floatOpacity : normalizeStatusFloatOpacity(input.floatOpacity), lockStatusFloat: input.lockStatusFloat === undefined ? store.preferences.lockStatusFloat : Boolean(input.lockStatusFloat),
     }
     applyLaunchAtLogin(store.preferences.launchAtLogin); await writeJson(TENANT_STORE_FILE, store); await setStatusFloatVisible(store.preferences.showStatusFloat); publishStatus(); return store.preferences
   })
@@ -492,7 +489,6 @@ else {
     registerProtocol(); registerIpc(); const store = await getStore(); applyLaunchAtLogin(store.preferences.launchAtLogin); createTray()
     const restarted = await invalidateSessionAfterSystemRestart(); scheduleSecurityRefresh(); scheduleNetworkChangeRefresh(); void refreshSecurityReport(); await setStatusFloatVisible(store.preferences.showStatusFloat)
     if (!launchInTray) { createMainWindow(); if (!restarted) await restoreSession() }
-    else if (store.preferences.loginMode === 'webview') { await startLogin().catch((error) => { lastError = userFacingError(error); publishStatus() }) }
     else if (!restarted) await restoreSession()
     publishStatus(); const startupCallback = extractProtocolUrl(process.argv); if (startupCallback) await handleProtocolUrl(startupCallback); app.on('activate', showMainWindow)
   })

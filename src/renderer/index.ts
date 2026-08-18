@@ -11,7 +11,7 @@ type PublicTenant = {
   source: 'built-in' | 'custom'
 }
 type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean }
-type PreferenceInput = Partial<Preferences> & { floatSizeSource?: 'width' | 'height' }
+type PreferenceInput = Partial<Preferences>
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
 type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; unknownCount: number; checkedAt: string; localIp: string; publicAccess: boolean; platformSupported: boolean }
@@ -155,7 +155,7 @@ function renderSecurity(report?: DeviceSecurityReport): void {
     return card
   }))
   const checked = new Date(report.checkedAt)
-  elements.securityCheckedAt.textContent = `最近检测：${Number.isNaN(checked.getTime()) ? '刚刚' : checked.toLocaleString('zh-CN')} · 局域网 IP：${report.localIp}${report.publicAccess ? '（公网）' : ''}`
+  elements.securityCheckedAt.textContent = `最近检测：${Number.isNaN(checked.getTime()) ? '刚刚' : checked.toLocaleString('zh-CN')} · 局域网 IP：${report.localIp}`
 }
 
 function renderTenants(data: AppData): void {
@@ -219,7 +219,7 @@ async function handleAddTenant(event: SubmitEvent): Promise<void> {
   finally { elements.saveTenant.disabled = false }
 }
 
-async function savePreferences(floatSizeSource?: 'width' | 'height'): Promise<void> {
+async function savePreferences(): Promise<void> {
   const previous = currentData?.preferences
   if (!previous) return
   setMessage(elements.settingsMessage, '正在保存设置…')
@@ -227,7 +227,7 @@ async function savePreferences(floatSizeSource?: 'width' | 'height'): Promise<vo
     await window.cloudVerifyDevice.savePreferences({
       launchAtLogin: elements.launchAtLogin.checked, requireWindowsHello: elements.requireWindowsHello.checked,
       loginMode: elements.loginMode.value === 'browser' ? 'browser' : 'webview', showStatusFloat: elements.showStatusFloat.checked,
-      floatWidth: Number(elements.floatWidth.value), floatHeight: Number(elements.floatHeight.value), floatOpacity: Number(elements.floatOpacity.value), lockStatusFloat: elements.lockStatusFloat.checked, floatSizeSource,
+      floatWidth: Number(elements.floatWidth.value), floatHeight: Number(elements.floatHeight.value), floatOpacity: Number(elements.floatOpacity.value), lockStatusFloat: elements.lockStatusFloat.checked,
     })
     await reload(); setMessage(elements.settingsMessage, '系统设置已保存。')
   } catch (error) {
@@ -281,8 +281,8 @@ function bindEvents(): void {
   elements.launchAtLogin.addEventListener('change', () => void savePreferences())
   elements.loginMode.addEventListener('change', () => void savePreferences())
   elements.showStatusFloat.addEventListener('change', () => void savePreferences())
-  elements.floatWidth.addEventListener('change', () => void savePreferences('width'))
-  elements.floatHeight.addEventListener('change', () => void savePreferences('height'))
+  elements.floatWidth.addEventListener('change', () => void savePreferences())
+  elements.floatHeight.addEventListener('change', () => void savePreferences())
   elements.floatOpacity.addEventListener('input', () => { elements.floatOpacityValue.value = `${elements.floatOpacity.value}%`; elements.floatOpacityValue.textContent = `${elements.floatOpacity.value}%` })
   elements.floatOpacity.addEventListener('change', () => void savePreferences())
   elements.lockStatusFloat.addEventListener('change', () => void savePreferences())
