@@ -44,11 +44,16 @@
     elements.ip.title = !report ? '正在读取网络状态。' : report.localIp === '网络未连接' ? '未检测到可用的网络连接。' : '当前设备的局域网 IPv4 地址。'
     const accessText = !report ? '网络检测中' : report.localIp === '网络未连接' ? '网络未连接' : report.publicAccess ? '公网访问' : '内网访问'
     const accessClass = !report || report.localIp === '网络未连接' ? 'network-state-neutral' : report.publicAccess ? 'network-state-public' : 'network-state-private'
+    const separator = document.createElement('span')
+    separator.className = 'security-separator'
+    separator.textContent = '|'
     const access = document.createElement('span')
     access.className = `network-state ${accessClass}`
     access.textContent = accessText
-    elements.security.replaceChildren(document.createTextNode(`${risk.text} | `), access)
-    elements.security.title = report ? `${report.checks.map((check) => `${check.title}：${check.detail}`).join('\n')}\n网络访问：${accessText}` : risk.detail
+    elements.security.replaceChildren(document.createTextNode(`${risk.text} `), separator, document.createTextNode(' '), access)
+    const checkedAt = report ? new Date(report.checkedAt) : null
+    const checkedAtText = checkedAt && !Number.isNaN(checkedAt.getTime()) ? checkedAt.toLocaleString('zh-CN') : '刚刚'
+    elements.security.title = report ? `${report.checks.map((check) => `${check.title}：${check.detail}`).join('\n')}\n最近检测：${checkedAtText}\n网络访问：${accessText}` : risk.detail
     elements.security.style.color = risk.color
     const signedIn = Boolean(status.signedIn)
     elements.login.classList.toggle('is-logout', signedIn)

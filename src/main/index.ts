@@ -22,8 +22,8 @@ const TENANT_STORE_FILE = 'tenants.json'
 const SESSION_FILE = 'session.json'
 const STATUS_FLOAT_BOUNDS_FILE = 'status-float-bounds.json'
 const SECURITY_REFRESH_INTERVAL = 30 * 60 * 1000
-const STATUS_FLOAT_DEFAULT_WIDTH = 200
-const STATUS_FLOAT_DEFAULT_HEIGHT = 200
+const STATUS_FLOAT_DEFAULT_WIDTH = 215
+const STATUS_FLOAT_DEFAULT_HEIGHT = 190
 const STATUS_FLOAT_MIN_WIDTH = 160
 const STATUS_FLOAT_MIN_HEIGHT = 160
 const STATUS_FLOAT_MAX_WIDTH = 720
@@ -115,7 +115,7 @@ function statusFloatSizeFromPreferences(preferences: Pick<Preferences, 'floatWid
 function normalizeStatusFloatOpacity(value: unknown): number {
   const numeric = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(numeric)) return 88
-  return Math.min(100, Math.max(35, Math.round(numeric)))
+  return Math.min(100, Math.max(0, Math.round(numeric)))
 }
 function defaultPreferences(): Preferences { return { launchAtLogin: false, requireWindowsHello: false, loginMode: 'webview', showStatusFloat: true, floatWidth: STATUS_FLOAT_DEFAULT_WIDTH, floatHeight: STATUS_FLOAT_DEFAULT_HEIGHT, floatOpacity: 88, lockStatusFloat: false } }
 function defaultStore(): TenantStore { return { activeTenantId: BUILT_IN_TENANTS[0].id, customTenants: [], deletedBuiltInTenantIds: [], preferences: defaultPreferences() } }
@@ -357,7 +357,7 @@ function createMainWindow(): void {
 }
 function createAuthWindow(url: string): void {
   authWindow?.close()
-  authWindow = new BrowserWindow({ width: 735, height: 593, minWidth: 520, minHeight: 460, title: '账户登录', icon: iconPath(), backgroundColor: '#ffffff', parent: mainWindow ?? undefined, modal: Boolean(mainWindow?.isVisible()), show: true, webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } })
+  authWindow = new BrowserWindow({ width: 784, height: 632, minWidth: 520, minHeight: 460, title: '账户登录', icon: iconPath(), backgroundColor: '#ffffff', parent: mainWindow ?? undefined, modal: Boolean(mainWindow?.isVisible()), show: true, webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } })
   const capture = (target: string): void => { if (isProtocolUrl(target)) void handleProtocolUrl(target).catch((error) => { lastError = userFacingError(error); publishStatus() }) }
   authWindow.webContents.on('will-navigate', (event, target) => { if (isProtocolUrl(target)) { event.preventDefault(); capture(target) } })
   authWindow.webContents.on('will-redirect', (event, target) => { if (isProtocolUrl(target)) { event.preventDefault(); capture(target) } })

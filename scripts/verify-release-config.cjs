@@ -7,7 +7,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'windows-release.yml'), 'utf8');
 const gitignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
 
-assert.equal(packageJson.version, '3.0.7');
+assert.equal(packageJson.version, '3.0.8');
 assert.equal(packageJson.author, 'DevHjz');
 assert.equal(packageJson.build.productName, '云端验证设备认证服务');
 assert.equal(packageJson.build.executableName, 'cloud-verify-device-auth');

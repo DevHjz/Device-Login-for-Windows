@@ -22,6 +22,7 @@ h1 { margin: 0; color: #224d72; font-size: 12px; letter-spacing: 0; line-height:
 .float-details span { color: #5680a3; font-size: 10px; }
 .float-details strong { overflow: hidden; color: #254d6d; font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .float-details .security-row { border: 1px solid rgba(131, 185, 227, .36); background: rgba(245, 251, 255, .72); }
+.float-details .security-separator { color: #111; font-weight: 800; }
 .float-details .network-state { font-weight: 800; }
 .float-details .network-state-public { color: #ad7414; }
 .float-details .network-state-private { color: #168047; }
