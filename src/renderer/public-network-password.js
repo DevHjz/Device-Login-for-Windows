@@ -4,7 +4,7 @@
   const message = document.getElementById('password-message')
   const closeButton = document.getElementById('close-password-dialog')
   if (!(form instanceof HTMLFormElement) || !(password instanceof HTMLInputElement) || !(message instanceof HTMLElement) || !(closeButton instanceof HTMLButtonElement)) return
-  const cancel = async (): Promise<void> => { await window.cloudVerifyDevice.cancelPublicNetworkUnlock() }
+  const cancel = async () => { await window.cloudVerifyDevice.cancelPublicNetworkUnlock() }
   closeButton.addEventListener('click', () => { void cancel() })
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); void cancel() } })
   form.addEventListener('submit', async (event) => {
