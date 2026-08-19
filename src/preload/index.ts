@@ -64,6 +64,7 @@ const api = {
   refreshSecurity: (): Promise<DeviceSecurityReport> => ipcRenderer.invoke('security:refresh'),
   resetToDefaults: (): Promise<void> => ipcRenderer.invoke('app:reset'),
   unlockPublicNetwork: (password: string): Promise<PublicNetworkUnlockResult> => ipcRenderer.invoke('public-network:unlock', password),
+  cancelPublicNetworkUnlock: (): Promise<boolean> => ipcRenderer.invoke('public-network:cancel-unlock'),
   onStatusChanged: (listener: (status: Status) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, status: Status): void => listener(status)
     ipcRenderer.on('status:changed', handler)

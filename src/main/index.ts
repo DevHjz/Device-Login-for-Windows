@@ -297,7 +297,9 @@ async function refreshSecurityReport(): Promise<DeviceSecurityReport> {
   publishStatus()
   return securityReport
 }
-async function refreshNetworkAccessState(): Promise<void> {
+async function refreshNetworkAccessState(options: { onlyWhenPrivate?: boolean } = {}): Promise<void> {
+  // 门户认证场景只在当前仍属内网时周期复测公网；网络切换触发的刷新不受此限制，确保新网络能立即纳入策略判断。
+  if (options.onlyWhenPrivate && securityReport?.publicAccess) return
   const access = await collectNetworkAccessState()
   if (!securityReport) { await refreshSecurityReport(); return }
   securityReport = { ...securityReport, localIp: access.localIp, publicAccess: access.publicAccess, networkId: access.networkId }
@@ -305,7 +307,7 @@ async function refreshNetworkAccessState(): Promise<void> {
   publishStatus()
 }
 function scheduleSecurityRefresh(): void { if (securityRefreshTimer) clearInterval(securityRefreshTimer); securityRefreshTimer = setInterval(() => { void refreshSecurityReport() }, SECURITY_REFRESH_INTERVAL) }
-function scheduleNetworkAccessRefresh(): void { if (networkAccessRefreshTimer) clearInterval(networkAccessRefreshTimer); networkAccessRefreshTimer = setInterval(() => { void refreshNetworkAccessState() }, NETWORK_ACCESS_REFRESH_INTERVAL) }
+function scheduleNetworkAccessRefresh(): void { if (networkAccessRefreshTimer) clearInterval(networkAccessRefreshTimer); networkAccessRefreshTimer = setInterval(() => { void refreshNetworkAccessState({ onlyWhenPrivate: true }) }, NETWORK_ACCESS_REFRESH_INTERVAL) }
 function currentNetworkFingerprint(): string {
   return Object.entries(os.networkInterfaces()).flatMap(([name, addresses]) => (addresses ?? [])
     .filter((address) => address.family === 'IPv4' && !address.internal)
@@ -487,11 +489,21 @@ async function showPublicNetworkPasswordPrompt(): Promise<void> {
   await publicNetworkPasswordWindow.loadFile(path.join(__dirname, '../renderer/public-network-password.html'))
   if (!publicNetworkPasswordWindow.isDestroyed()) { publicNetworkPasswordWindow.show(); publicNetworkPasswordWindow.focus() }
 }
+function enforcePublicNetworkWarningCoverage(): void {
+  const warningWindow = publicNetworkWarningWindow
+  if (!warningWindow || warningWindow.isDestroyed()) return
+  const display = screen.getPrimaryDisplay()
+  warningWindow.setBounds(display.bounds)
+  warningWindow.setKiosk(true)
+  warningWindow.setFullScreen(true)
+  warningWindow.setAlwaysOnTop(true, 'screen-saver')
+  warningWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+}
 async function showPublicNetworkWarning(): Promise<void> {
   if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) {
+    enforcePublicNetworkWarningCoverage()
     publicNetworkWarningWindow.show()
     publicNetworkWarningWindow.focus()
-    publicNetworkWarningWindow.setAlwaysOnTop(true, 'screen-saver')
     return
   }
   const display = screen.getPrimaryDisplay()
@@ -501,15 +513,20 @@ async function showPublicNetworkWarning(): Promise<void> {
     backgroundColor: '#000000', show: false, title: '公网访问限制', icon: iconPath(),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
   })
-  publicNetworkWarningWindow.setAlwaysOnTop(true, 'screen-saver')
-  publicNetworkWarningWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  enforcePublicNetworkWarningCoverage()
   publicNetworkWarningWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') { event.preventDefault(); void showPublicNetworkPasswordPrompt() }
   })
   publicNetworkWarningWindow.on('closed', () => { publicNetworkWarningWindow = null })
   const image = pathToFileURL(publicNetworkWarningImagePath()).toString()
   await publicNetworkWarningWindow.loadFile(path.join(__dirname, '../renderer/public-network-warning.html'), { query: { image } })
-  if (!publicNetworkWarningWindow.isDestroyed()) { publicNetworkWarningWindow.show(); publicNetworkWarningWindow.focus() }
+  if (!publicNetworkWarningWindow.isDestroyed()) {
+    enforcePublicNetworkWarningCoverage()
+    publicNetworkWarningWindow.show()
+    publicNetworkWarningWindow.focus()
+    // Windows 有时会在首次显示时重新计算非客户区；延迟重申可避免任务栏短暂露出。
+    setTimeout(enforcePublicNetworkWarningCoverage, 100)
+  }
 }
 async function applyPublicNetworkPolicy(report: DeviceSecurityReport): Promise<void> {
   const store = await getStore()
@@ -607,6 +624,11 @@ function registerIpc(): void {
     if (!publicNetworkPasswordWindow || publicNetworkPasswordWindow.isDestroyed() || event.sender.id !== publicNetworkPasswordWindow.webContents.id) return { accepted: false, message: '当前验证窗口不可用。' }
     if (typeof password !== 'string' || password.length === 0 || password.length > 256) return { accepted: false, message: '请输入管理员密码。' }
     return unlockCurrentPublicNetworkWithPassword(password)
+  })
+  ipcMain.handle('public-network:cancel-unlock', (event) => {
+    if (!publicNetworkPasswordWindow || publicNetworkPasswordWindow.isDestroyed() || event.sender.id !== publicNetworkPasswordWindow.webContents.id) return false
+    publicNetworkPasswordWindow.close()
+    return true
   })
   ipcMain.handle('auth:status', getStatus); ipcMain.handle('auth:login', startLogin)
   ipcMain.handle('auth:logout', async () => { await standardLogout(); lastError = ''; publishStatus() })

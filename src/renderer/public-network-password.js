@@ -2,7 +2,11 @@
   const form = document.getElementById('password-form')
   const password = document.getElementById('password')
   const message = document.getElementById('password-message')
-  if (!(form instanceof HTMLFormElement) || !(password instanceof HTMLInputElement) || !(message instanceof HTMLElement)) return
+  const closeButton = document.getElementById('close-password-dialog')
+  if (!(form instanceof HTMLFormElement) || !(password instanceof HTMLInputElement) || !(message instanceof HTMLElement) || !(closeButton instanceof HTMLButtonElement)) return
+  const cancel = async (): Promise<void> => { await window.cloudVerifyDevice.cancelPublicNetworkUnlock() }
+  closeButton.addEventListener('click', () => { void cancel() })
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); void cancel() } })
   form.addEventListener('submit', async (event) => {
     event.preventDefault()
     message.textContent = ''
