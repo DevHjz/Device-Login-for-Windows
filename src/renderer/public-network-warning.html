@@ -9,6 +9,17 @@
 <body>
   <main class="warning-shell" aria-label="公网访问限制警示">
     <img id="warning-image" alt="公网访问限制警示" />
+    <section id="password-overlay" class="password-overlay" role="dialog" aria-modal="true" aria-labelledby="password-title" hidden>
+      <form id="password-form" class="password-dialog">
+        <button id="close-password-dialog" class="close-button" type="button" aria-label="关闭密码输入窗" title="关闭">×</button>
+        <h1 id="password-title">解除公网访问限制</h1>
+        <p>请输入管理员密码以授权当前公网访问。</p>
+        <label for="password">管理员密码</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+        <p id="password-message" class="password-message" role="alert"></p>
+        <button class="confirm-button" type="submit">确认</button>
+      </form>
+    </section>
   </main>
   <script src="public-network-warning.js"></script>
 </body>

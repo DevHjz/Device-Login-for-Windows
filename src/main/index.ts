@@ -50,7 +50,6 @@ let mainWindow: BrowserWindow | null = null
 let authWindow: BrowserWindow | null = null
 let statusFloatWindow: BrowserWindow | null = null
 let publicNetworkWarningWindow: BrowserWindow | null = null
-let publicNetworkPasswordWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let companion: NativeSsoService | null = null
 let companionPort: number | null = null
@@ -450,7 +449,6 @@ function reassertStatusFloatDesktopLayer(): void {
   })
 }
 function hidePublicNetworkWarning(): void {
-  if (publicNetworkPasswordWindow && !publicNetworkPasswordWindow.isDestroyed()) publicNetworkPasswordWindow.hide()
   if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) publicNetworkWarningWindow.hide()
 }
 function isPublicNetworkPasswordValid(expected: string, supplied: string): boolean {
@@ -477,17 +475,13 @@ async function unlockCurrentPublicNetworkWithPassword(password: string): Promise
   }
 }
 async function showPublicNetworkPasswordPrompt(): Promise<void> {
-  if (!publicNetworkWarningWindow || publicNetworkWarningWindow.isDestroyed()) return
-  if (publicNetworkPasswordWindow && !publicNetworkPasswordWindow.isDestroyed()) { publicNetworkPasswordWindow.show(); publicNetworkPasswordWindow.focus(); return }
-  publicNetworkPasswordWindow = new BrowserWindow({
-    width: 380, height: 250, useContentSize: true, frame: false, modal: true, parent: publicNetworkWarningWindow,
-    alwaysOnTop: true, skipTaskbar: true, resizable: false, movable: false, show: false, backgroundColor: '#eef5ff', title: '解除公网访问限制', icon: iconPath(),
-    webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false },
-  })
-  publicNetworkPasswordWindow.setAlwaysOnTop(true, 'screen-saver')
-  publicNetworkPasswordWindow.on('closed', () => { publicNetworkPasswordWindow = null })
-  await publicNetworkPasswordWindow.loadFile(path.join(__dirname, '../renderer/public-network-password.html'))
-  if (!publicNetworkPasswordWindow.isDestroyed()) { publicNetworkPasswordWindow.show(); publicNetworkPasswordWindow.focus() }
+  const warningWindow = publicNetworkWarningWindow
+  if (!warningWindow || warningWindow.isDestroyed()) return
+  // 密码输入改为 kiosk 警示页内部的模态层；不再创建子窗口，以保持 Windows 任务栏及其他应用始终被拦截层覆盖。
+  enforcePublicNetworkWarningCoverage()
+  warningWindow.webContents.send('public-network:show-password-prompt')
+  warningWindow.show()
+  warningWindow.focus()
 }
 function enforcePublicNetworkWarningCoverage(): void {
   const warningWindow = publicNetworkWarningWindow
@@ -511,7 +505,7 @@ async function showPublicNetworkWarning(): Promise<void> {
     x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height,
     frame: false, fullscreen: true, kiosk: true, alwaysOnTop: true, skipTaskbar: true, movable: false, resizable: false,
     backgroundColor: '#000000', show: false, title: '公网访问限制', icon: iconPath(),
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+    webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   })
   enforcePublicNetworkWarningCoverage()
   publicNetworkWarningWindow.webContents.on('before-input-event', (event, input) => {
@@ -624,13 +618,13 @@ function registerIpc(): void {
     publishStatus(); return store.preferences
   })
   ipcMain.handle('public-network:unlock', async (event, password: unknown) => {
-    if (!publicNetworkPasswordWindow || publicNetworkPasswordWindow.isDestroyed() || event.sender.id !== publicNetworkPasswordWindow.webContents.id) return { accepted: false, message: '当前验证窗口不可用。' }
+    if (!publicNetworkWarningWindow || publicNetworkWarningWindow.isDestroyed() || event.sender.id !== publicNetworkWarningWindow.webContents.id) return { accepted: false, message: '当前验证窗口不可用。' }
     if (typeof password !== 'string' || password.length === 0 || password.length > 256) return { accepted: false, message: '请输入管理员密码。' }
     return unlockCurrentPublicNetworkWithPassword(password)
   })
   ipcMain.handle('public-network:cancel-unlock', (event) => {
-    if (!publicNetworkPasswordWindow || publicNetworkPasswordWindow.isDestroyed() || event.sender.id !== publicNetworkPasswordWindow.webContents.id) return false
-    publicNetworkPasswordWindow.close()
+    if (!publicNetworkWarningWindow || publicNetworkWarningWindow.isDestroyed() || event.sender.id !== publicNetworkWarningWindow.webContents.id) return false
+    publicNetworkWarningWindow.webContents.send('public-network:hide-password-prompt')
     return true
   })
   ipcMain.handle('auth:status', getStatus); ipcMain.handle('auth:login', startLogin)

@@ -65,6 +65,13 @@ const api = {
   resetToDefaults: (): Promise<void> => ipcRenderer.invoke('app:reset'),
   unlockPublicNetwork: (password: string): Promise<PublicNetworkUnlockResult> => ipcRenderer.invoke('public-network:unlock', password),
   cancelPublicNetworkUnlock: (): Promise<boolean> => ipcRenderer.invoke('public-network:cancel-unlock'),
+  onPublicNetworkPasswordPromptChange: (listener: (visible: boolean) => void): (() => void) => {
+    const show = (): void => listener(true)
+    const hide = (): void => listener(false)
+    ipcRenderer.on('public-network:show-password-prompt', show)
+    ipcRenderer.on('public-network:hide-password-prompt', hide)
+    return () => { ipcRenderer.removeListener('public-network:show-password-prompt', show); ipcRenderer.removeListener('public-network:hide-password-prompt', hide) }
+  },
   onStatusChanged: (listener: (status: Status) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, status: Status): void => listener(status)
     ipcRenderer.on('status:changed', handler)
