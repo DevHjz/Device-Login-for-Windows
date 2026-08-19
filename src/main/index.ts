@@ -448,7 +448,11 @@ function reassertStatusFloatDesktopLayer(): void {
     floatWindow.showInactive()
   })
 }
+function resetPublicNetworkPasswordPrompt(): void {
+  if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) publicNetworkWarningWindow.webContents.send('public-network:hide-password-prompt')
+}
 function hidePublicNetworkWarning(): void {
+  resetPublicNetworkPasswordPrompt()
   if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) publicNetworkWarningWindow.hide()
 }
 function isPublicNetworkPasswordValid(expected: string, supplied: string): boolean {
@@ -495,6 +499,8 @@ function enforcePublicNetworkWarningCoverage(): void {
 }
 async function showPublicNetworkWarning(): Promise<void> {
   if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) {
+    // 每次新的公网拦截均从纯警示页开始；密码层只能由用户随后按 Esc 显式打开。
+    resetPublicNetworkPasswordPrompt()
     enforcePublicNetworkWarningCoverage()
     publicNetworkWarningWindow.show()
     publicNetworkWarningWindow.focus()
