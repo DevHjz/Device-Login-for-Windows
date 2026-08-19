@@ -24,6 +24,7 @@ type Preferences = {
   floatHeight: number
   floatOpacity: number
   lockStatusFloat: boolean
+  allowPublicNetwork: boolean
 }
 type PreferenceInput = Partial<Preferences>
 

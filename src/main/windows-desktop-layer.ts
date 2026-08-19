@@ -91,3 +91,27 @@ $newStyle = (($style -bor $WS_CHILD) -band (-bnot $WS_POPUP))
     return stdout.trim().endsWith('true')
   } catch { return false }
 }
+
+
+/** 检测 Explorer 的 Progman/WorkerW 桌面宿主是否已恢复。 */
+export async function isDesktopHostAvailable(): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  const script = `
+$explorer = @(Get-Process -Name explorer -ErrorAction SilentlyContinue)
+if ($explorer.Count -eq 0) { 'false'; exit 0 }
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class CloudVerifyDesktopProbe {
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string windowName);
+}
+'@
+if ([CloudVerifyDesktopProbe]::FindWindow('Progman', $null) -ne [IntPtr]::Zero) { 'true' } else { 'false' }
+`
+  try {
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodePowerShell(script),
+    ], { windowsHide: true, timeout: 5_000, maxBuffer: 8 * 1024 })
+    return stdout.trim().endsWith('true')
+  } catch { return false }
+}

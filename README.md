@@ -56,7 +56,7 @@ cloud-verify-device-login://oauth/callback
 | 杀毒软件 | `Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct`，解析 `productState` | 适用于 Defender、360、火绒等向 Windows Security Center 注册的产品。 |
 | 病毒库 | `Get-MpComputerStatus` 的 Defender 签名更新时间；其它产品使用 Security Center `productState` 作有限判断 | Defender 超过 7 天或明确过期时标为隐患；若已启用非 Defender 第三方杀毒软件，则此项状态不计入风险。 |
 | Windows 防火墙 | `Get-NetFirewallProfile -PolicyStore ActiveStore`，读取 Domain、Private、Public 配置文件 | 任一配置文件未启用时标为隐患。 |
-| 网络 | `Get-NetIPAddress -AddressFamily IPv4` 配合已启用网络适配器状态；保留 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16` 私网地址，并用 `Test-NetConnection 172.64.36.1` 探测公网连通性 | 网络接口或 IPv4 变化后自动刷新；无可用网络时显示“网络未连接”。 |
+| 网络 | `Get-NetIPAddress -AddressFamily IPv4` 配合已启用网络适配器状态；保留 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16` 私网地址，并用 `Test-NetConnection 172.64.36.1` 探测公网连通性 | 网络接口或 IPv4 变化后立即刷新；即使 IP 未变化，也每 10 秒复测公网连通性，以识别 Wi-Fi 门户认证完成后的出网状态。无可用网络时显示“网络未连接”。 |
 
 检测由应用通过 `powershell.exe -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand …` 在本机执行，**不调用云端安全检测 API**。检测结果会先 `ConvertTo-Json`，再以 UTF-8 Base64 输出，避免 PowerShell 控制台代码页造成中文乱码。
 
@@ -74,26 +74,32 @@ cloud-verify-device-login://oauth/callback
 | IP 地址 | 显示优先局域网 IPv4；无可用网络时显示“网络未连接”。 |
 | 安全认证 | 显示安全结果与网络访问状态，例如“通过检测 \| 公网访问”或“通过检测 \| 内网访问”；分隔符“\|”固定为黑色，公网访问为黄色，内网访问为绿色；鼠标悬停显示最近检测时间、网络访问状态和五项检查详情。 |
 
-悬浮窗为无边框 Windows 桌面状态窗口，使用浅蓝半透明样式，不出现在任务栏。它在创建时一次性附着到 Explorer 的 `WorkerW` 桌面宿主层，并以非激活方式显示；不会因重复挂接而闪烁。普通应用激活时仍会覆盖它，但按“返回桌面”后悬浮窗不会被隐藏。它会随应用内状态变化自动刷新；登录/退出按钮遵循系统设置中选择的登录方式。
+悬浮窗为无边框 Windows 桌面状态窗口，使用浅蓝半透明样式，不出现在任务栏。它在创建时附着到 Explorer 的 `WorkerW` 桌面宿主层，并以非激活方式显示；普通应用激活时仍会覆盖它，但按“返回桌面”后悬浮窗不会被隐藏。应用会监测 Explorer 的退出与恢复，并在 Explorer 重启且桌面宿主可用后自动重新挂接和显示悬浮窗。它会随应用内状态变化自动刷新；登录/退出按钮遵循系统设置中选择的登录方式。
 
-## 六、租户管理与托盘
+## 六、公网访问限制
+
+系统设置中的“允许连接公网”默认开启。关闭时需要完成一次 Windows Hello 确认；随后检测到新的公网访问会显示全屏最高层警示。用户需按 `Esc` 并完成 Windows Hello 验证，才会关闭警示并仅授权当前公网；连接到新的公网后会再次要求验证。
+
+警示图片以明文资源 `public-network-warning.webp` 随应用目录提供，可由部署管理员直接替换为同名图片，不需要重新编译应用。
+
+## 七、租户管理与托盘
 
 租户界面仅提供**添加租户**和**删除租户**，不提供编辑入口。添加时可填写租户显示名称、服务地址、客户端 ID、组织、应用名称、公开证书、设备显示名称和额外允许网页地址。额外网页地址必须使用 HTTPS。
 
 切换租户前会要求确认；确认后执行标准退出，清除旧租户的本机会话与 Cookie。关闭主窗口只会隐藏至托盘；右键托盘图标并选择“退出”才会关闭进程。
 
-## 七、GitHub Actions 构建
+## 八、GitHub Actions 构建
 
 工作流文件为 [`.github/workflows/windows-release.yml`](.github/workflows/windows-release.yml)。推送 `main`、推送 `v*` 标签、提交拉取请求或手动触发时，工作流执行类型检查、Native SSO 回归、Windows 外壳回归、设备安全态势回归、公共客户端 PKCE 回归与发布配置校验。
 
 ```text
-cloud-verify-device-auth-3.0.8-win-x64-setup.exe
-cloud-verify-device-auth-3.0.8-win-arm64-setup.exe
+cloud-verify-device-auth-3.0.9-win-x64-setup.exe
+cloud-verify-device-auth-3.0.9-win-arm64-setup.exe
 ```
 
 最终工件 `cloud-verify-device-auth-windows-x64-arm64.zip` 只包含上述两个 EXE 文件。工作流不引用、校验或注入任何租户 client secret。生产环境建议在受保护的签名流程中使用组织的 Authenticode 证书。
 
-## 八、从源码开发
+## 九、从源码开发
 
 ```bash
 pnpm install --frozen-lockfile

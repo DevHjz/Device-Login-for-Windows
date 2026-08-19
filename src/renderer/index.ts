@@ -10,7 +10,7 @@ type PublicTenant = {
   deviceName: string
   source: 'built-in' | 'custom'
 }
-type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean }
+type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean; allowPublicNetwork: boolean }
 type PreferenceInput = Partial<Preferences>
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
@@ -73,6 +73,7 @@ const elements = {
   floatOpacity: byId<HTMLInputElement>('float-opacity'),
   floatOpacityValue: byId<HTMLOutputElement>('float-opacity-value'),
   lockStatusFloat: byId<HTMLInputElement>('lock-status-float'),
+  allowPublicNetwork: byId<HTMLInputElement>('allow-public-network'),
   requireWindowsHello: byId<HTMLInputElement>('require-windows-hello'),
   helloHelp: byId<HTMLElement>('hello-help'),
   settingsMessage: byId<HTMLElement>('settings-message'),
@@ -181,6 +182,7 @@ function renderPreferences(data: AppData): void {
   elements.floatOpacity.disabled = !data.preferences.showStatusFloat
   elements.lockStatusFloat.checked = data.preferences.lockStatusFloat
   elements.lockStatusFloat.disabled = !data.preferences.showStatusFloat
+  elements.allowPublicNetwork.checked = data.preferences.allowPublicNetwork
   elements.requireWindowsHello.checked = data.preferences.requireWindowsHello
   elements.requireWindowsHello.disabled = !data.helloAvailability.available
   elements.helloHelp.textContent = data.helloAvailability.available ? '开启后，授权每次网页登录前均需完成一次 Windows Hello 验证。' : data.helloAvailability.message
@@ -227,14 +229,14 @@ async function savePreferences(): Promise<void> {
     await window.cloudVerifyDevice.savePreferences({
       launchAtLogin: elements.launchAtLogin.checked, requireWindowsHello: elements.requireWindowsHello.checked,
       loginMode: elements.loginMode.value === 'browser' ? 'browser' : 'webview', showStatusFloat: elements.showStatusFloat.checked,
-      floatWidth: Number(elements.floatWidth.value), floatHeight: Number(elements.floatHeight.value), floatOpacity: Number(elements.floatOpacity.value), lockStatusFloat: elements.lockStatusFloat.checked,
+      floatWidth: Number(elements.floatWidth.value), floatHeight: Number(elements.floatHeight.value), floatOpacity: Number(elements.floatOpacity.value), lockStatusFloat: elements.lockStatusFloat.checked, allowPublicNetwork: elements.allowPublicNetwork.checked,
     })
     await reload(); setMessage(elements.settingsMessage, '系统设置已保存。')
   } catch (error) {
     elements.launchAtLogin.checked = previous.launchAtLogin; elements.loginMode.value = previous.loginMode
     elements.showStatusFloat.checked = previous.showStatusFloat; elements.floatWidth.value = String(previous.floatWidth); elements.floatHeight.value = String(previous.floatHeight)
     elements.floatOpacity.value = String(previous.floatOpacity); elements.floatOpacityValue.value = `${previous.floatOpacity}%`; elements.floatOpacityValue.textContent = `${previous.floatOpacity}%`
-    elements.lockStatusFloat.checked = previous.lockStatusFloat; elements.requireWindowsHello.checked = previous.requireWindowsHello
+    elements.lockStatusFloat.checked = previous.lockStatusFloat; elements.allowPublicNetwork.checked = previous.allowPublicNetwork; elements.requireWindowsHello.checked = previous.requireWindowsHello
     setMessage(elements.settingsMessage, error instanceof Error ? error.message : '系统设置未保存。', true)
   }
 }
@@ -286,6 +288,7 @@ function bindEvents(): void {
   elements.floatOpacity.addEventListener('input', () => { elements.floatOpacityValue.value = `${elements.floatOpacity.value}%`; elements.floatOpacityValue.textContent = `${elements.floatOpacity.value}%` })
   elements.floatOpacity.addEventListener('change', () => void savePreferences())
   elements.lockStatusFloat.addEventListener('change', () => void savePreferences())
+  elements.allowPublicNetwork.addEventListener('change', () => void savePreferences())
   elements.requireWindowsHello.addEventListener('change', () => void savePreferences())
   elements.resetToDefaults.addEventListener('click', () => void handleResetToDefaults())
   elements.login.addEventListener('click', () => void handleLogin())

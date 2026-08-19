@@ -7,7 +7,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'windows-release.yml'), 'utf8');
 const gitignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
 
-assert.equal(packageJson.version, '3.0.8');
+assert.equal(packageJson.version, '3.0.9');
 assert.equal(packageJson.author, 'DevHjz');
 assert.equal(packageJson.build.productName, '云端验证设备认证服务');
 assert.equal(packageJson.build.executableName, 'cloud-verify-device-auth');
@@ -15,7 +15,10 @@ assert.equal(packageJson.build.win.icon, 'assets/app.ico');
 assert.equal(packageJson.build.win.signAndEditExecutable, true);
 assert.equal(packageJson.build.nsis.installerIcon, 'assets/app.ico');
 assert.equal(packageJson.build.nsis.uninstallerIcon, 'assets/app.ico');
-assert.deepEqual(packageJson.build.extraResources, [{ from: 'assets/app.ico', to: 'app.ico' }]);
+assert.deepEqual(packageJson.build.extraResources, [
+  { from: 'assets/app.ico', to: 'app.ico' },
+  { from: 'assets/public-network-warning.webp', to: 'public-network-warning.webp' },
+]);
 assert.match(packageJson.build.win.artifactName, /cloud-verify-device-auth/);
 assert.deepEqual(packageJson.build.win.target[0].arch, ['x64', 'arm64']);
 assert.equal(packageJson.build.nsis.shortcutName, '云端验证设备认证服务');
@@ -34,6 +37,8 @@ assert.match(gitignore, /tenants\.json/);
 assert.match(gitignore, /session\.json/);
 assert.ok(fs.existsSync(path.join(root, 'assets', 'logo.png')));
 assert.ok(fs.existsSync(path.join(root, 'assets', 'app.ico')));
+assert.ok(fs.existsSync(path.join(root, 'assets', 'public-network-warning.webp')));
+assert.ok(fs.existsSync(path.join(root, 'src', 'renderer', 'public-network-warning.html')));
 assert.ok(fs.existsSync(path.join(root, 'src', 'renderer', 'float.html')));
 assert.ok(fs.existsSync(path.join(root, 'src', 'renderer', 'float.css')));
 assert.ok(fs.existsSync(path.join(root, 'src', 'renderer', 'float.js')));

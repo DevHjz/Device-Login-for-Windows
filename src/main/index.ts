@@ -3,13 +3,14 @@ import * as crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { collectDeviceSecurityReport, type DeviceSecurityReport } from './device-security'
+import { pathToFileURL } from 'node:url'
+import { collectDeviceSecurityReport, collectNetworkAccessState, type DeviceSecurityReport } from './device-security'
 import { IdentityClient } from './identity-client'
 import { NativeSsoService } from './native-sso'
 import { BUILT_IN_TENANTS, type TenantPreset } from './tenant-presets'
 import { ToastApprovalManager } from './toast-approval'
 import { getWindowsHelloAvailability, verifyWithWindowsHello } from './windows-hello'
-import { attachWindowToDesktop } from './windows-desktop-layer'
+import { attachWindowToDesktop, isDesktopHostAvailable } from './windows-desktop-layer'
 
 const PRODUCT_NAME = '云端验证设备认证服务'
 // 保持既有回调协议，避免要求管理员在身份服务端重新登记回调地址。
@@ -22,6 +23,7 @@ const TENANT_STORE_FILE = 'tenants.json'
 const SESSION_FILE = 'session.json'
 const STATUS_FLOAT_BOUNDS_FILE = 'status-float-bounds.json'
 const SECURITY_REFRESH_INTERVAL = 30 * 60 * 1000
+const NETWORK_ACCESS_REFRESH_INTERVAL = 10 * 1000
 const STATUS_FLOAT_DEFAULT_WIDTH = 215
 const STATUS_FLOAT_DEFAULT_HEIGHT = 190
 const STATUS_FLOAT_MIN_WIDTH = 160
@@ -33,7 +35,7 @@ type LoginMode = 'webview' | 'browser'
 type StatusFloatBounds = { x: number; y: number; width: number; height: number }
 type Tenant = TenantPreset & { createdAt: string; updatedAt: string; source: 'built-in' | 'custom' }
 type TenantInput = { displayName?: string; endpoint?: string; clientId?: string; orgName?: string; appName?: string; certificate?: string; allowedOrigins?: unknown; deviceName?: string }
-type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: LoginMode; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean }
+type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: LoginMode; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean; allowPublicNetwork: boolean }
 type PreferenceInput = Partial<Preferences>
 type TenantStore = { activeTenantId: string; customTenants: Tenant[]; deletedBuiltInTenantIds: string[]; preferences: Preferences }
 type StoredSession = { tenantId: string; accessTokenEncrypted: string; refreshTokenEncrypted?: string; deviceSecretEncrypted?: string; userName: string; displayName: string; email?: string; emailLookupAttempted?: boolean; avatar: string; expiresAt?: number; bootMarker: string }
@@ -47,6 +49,7 @@ type Status = {
 let mainWindow: BrowserWindow | null = null
 let authWindow: BrowserWindow | null = null
 let statusFloatWindow: BrowserWindow | null = null
+let publicNetworkWarningWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let companion: NativeSsoService | null = null
 let companionPort: number | null = null
@@ -54,8 +57,14 @@ let sessionExpiryTimer: NodeJS.Timeout | null = null
 let securityRefreshTimer: NodeJS.Timeout | null = null
 let networkChangeWatchTimer: NodeJS.Timeout | null = null
 let networkChangeRefreshTimer: NodeJS.Timeout | null = null
+let networkAccessRefreshTimer: NodeJS.Timeout | null = null
+let desktopHostWatchTimer: NodeJS.Timeout | null = null
 let statusFloatBoundsSaveTimer: NodeJS.Timeout | null = null
 let securityReport: DeviceSecurityReport | undefined
+let desktopHostAvailable: boolean | null = null
+let lastPublicNetworkId: string | null = null
+let publicNetworkAuthorizedId: string | null = null
+let warningAuthorizationInProgress = false
 const pendingLoginRequests = new Map<string, PendingLoginRequest>()
 const recentOAuthCallbacks = new Map<string, NodeJS.Timeout>()
 let companionRunning = false
@@ -66,6 +75,7 @@ const approvals = new ToastApprovalManager(APP_USER_MODEL_ID)
 
 function appDataPath(fileName: string): string { return path.join(app.getPath('userData'), fileName) }
 function iconPath(): string { return app.isPackaged ? path.join(process.resourcesPath, 'app.ico') : path.join(__dirname, '../assets/app.ico') }
+function publicNetworkWarningImagePath(): string { return app.isPackaged ? path.join(process.resourcesPath, 'public-network-warning.webp') : path.join(__dirname, '../assets/public-network-warning.webp') }
 function currentBootMarker(): string { return String(Math.floor(Date.now() / 1000 - os.uptime())) }
 function encodeProtected(value: string): string {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows 数据保护服务不可用，无法安全保存敏感信息。')
@@ -117,7 +127,7 @@ function normalizeStatusFloatOpacity(value: unknown): number {
   if (!Number.isFinite(numeric)) return 88
   return Math.min(100, Math.max(0, Math.round(numeric)))
 }
-function defaultPreferences(): Preferences { return { launchAtLogin: false, requireWindowsHello: false, loginMode: 'webview', showStatusFloat: true, floatWidth: STATUS_FLOAT_DEFAULT_WIDTH, floatHeight: STATUS_FLOAT_DEFAULT_HEIGHT, floatOpacity: 88, lockStatusFloat: false } }
+function defaultPreferences(): Preferences { return { launchAtLogin: false, requireWindowsHello: false, loginMode: 'webview', showStatusFloat: true, floatWidth: STATUS_FLOAT_DEFAULT_WIDTH, floatHeight: STATUS_FLOAT_DEFAULT_HEIGHT, floatOpacity: 88, lockStatusFloat: false, allowPublicNetwork: true } }
 function defaultStore(): TenantStore { return { activeTenantId: BUILT_IN_TENANTS[0].id, customTenants: [], deletedBuiltInTenantIds: [], preferences: defaultPreferences() } }
 function cleanTenant(raw: unknown): Tenant | null {
   if (!raw || typeof raw !== 'object') return null
@@ -142,7 +152,7 @@ async function getStore(): Promise<TenantStore> {
     preferences: {
       launchAtLogin: Boolean(rawPreferences.launchAtLogin), requireWindowsHello: Boolean(rawPreferences.requireWindowsHello),
       loginMode: rawPreferences.loginMode === 'browser' ? 'browser' : 'webview', showStatusFloat: rawPreferences.showStatusFloat !== false,
-      floatWidth: normalizeStatusFloatWidth(rawPreferences.floatWidth), floatHeight: normalizeStatusFloatHeight(rawPreferences.floatHeight), floatOpacity: normalizeStatusFloatOpacity(rawPreferences.floatOpacity), lockStatusFloat: Boolean(rawPreferences.lockStatusFloat),
+      floatWidth: normalizeStatusFloatWidth(rawPreferences.floatWidth), floatHeight: normalizeStatusFloatHeight(rawPreferences.floatHeight), floatOpacity: normalizeStatusFloatOpacity(rawPreferences.floatOpacity), lockStatusFloat: Boolean(rawPreferences.lockStatusFloat), allowPublicNetwork: rawPreferences.allowPublicNetwork !== false,
     },
   }
   // 3.0 不再支持编辑内置租户，也不保留历史共享密钥字段。
@@ -279,8 +289,21 @@ async function hydrateSessionEmail(stored: StoredSession, tenant: Tenant): Promi
   await writeJson(SESSION_FILE, stored)
   return stored
 }
-async function refreshSecurityReport(): Promise<DeviceSecurityReport> { securityReport = await collectDeviceSecurityReport(); publishStatus(); return securityReport }
+async function refreshSecurityReport(): Promise<DeviceSecurityReport> {
+  securityReport = await collectDeviceSecurityReport()
+  await applyPublicNetworkPolicy(securityReport)
+  publishStatus()
+  return securityReport
+}
+async function refreshNetworkAccessState(): Promise<void> {
+  const access = await collectNetworkAccessState()
+  if (!securityReport) { await refreshSecurityReport(); return }
+  securityReport = { ...securityReport, localIp: access.localIp, publicAccess: access.publicAccess, networkId: access.networkId }
+  await applyPublicNetworkPolicy(securityReport)
+  publishStatus()
+}
 function scheduleSecurityRefresh(): void { if (securityRefreshTimer) clearInterval(securityRefreshTimer); securityRefreshTimer = setInterval(() => { void refreshSecurityReport() }, SECURITY_REFRESH_INTERVAL) }
+function scheduleNetworkAccessRefresh(): void { if (networkAccessRefreshTimer) clearInterval(networkAccessRefreshTimer); networkAccessRefreshTimer = setInterval(() => { void refreshNetworkAccessState() }, NETWORK_ACCESS_REFRESH_INTERVAL) }
 function currentNetworkFingerprint(): string {
   return Object.entries(os.networkInterfaces()).flatMap(([name, addresses]) => (addresses ?? [])
     .filter((address) => address.family === 'IPv4' && !address.internal)
@@ -295,7 +318,28 @@ function scheduleNetworkChangeRefresh(): void {
     previousFingerprint = nextFingerprint
     if (networkChangeRefreshTimer) clearTimeout(networkChangeRefreshTimer)
     // 等待 DHCP、VPN 或 Wi-Fi 切换完成后再读取 PowerShell 网络接口，避免采集到中间状态。
-    networkChangeRefreshTimer = setTimeout(() => { void refreshSecurityReport() }, 1_000)
+    networkChangeRefreshTimer = setTimeout(() => { void refreshNetworkAccessState() }, 1_000)
+  }, 2_000)
+}
+function scheduleDesktopHostRecovery(): void {
+  if (desktopHostWatchTimer) clearInterval(desktopHostWatchTimer)
+  void isDesktopHostAvailable().then((available) => { desktopHostAvailable = available })
+  desktopHostWatchTimer = setInterval(() => {
+    void isDesktopHostAvailable().then(async (available) => {
+      const recovered = desktopHostAvailable === false && available
+      desktopHostAvailable = available
+      if (!recovered) return
+      // Explorer 刚恢复时 WorkerW 可能尚未完全创建，延后挂接以避免悬浮窗丢失。
+      setTimeout(() => {
+        void (async () => {
+          const store = await getStore()
+          if (!store.preferences.showStatusFloat) return
+          if (statusFloatWindow?.isDestroyed()) statusFloatWindow = null
+          await setStatusFloatVisible(true)
+          reassertStatusFloatDesktopLayer()
+        })()
+      }, 1_200)
+    })
   }, 2_000)
 }
 async function getStatus(): Promise<Status> {
@@ -395,7 +439,60 @@ function reassertStatusFloatDesktopLayer(): void {
   const floatWindow = statusFloatWindow
   if (!floatWindow || floatWindow.isDestroyed()) return
   floatWindow.setAlwaysOnTop(false)
-  void attachWindowToDesktop(floatWindow).then(() => { if (!floatWindow.isDestroyed()) floatWindow.setAlwaysOnTop(false) })
+  void attachWindowToDesktop(floatWindow).then(() => {
+    if (floatWindow.isDestroyed()) return
+    floatWindow.setAlwaysOnTop(false)
+    floatWindow.showInactive()
+  })
+}
+function hidePublicNetworkWarning(): void {
+  if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) publicNetworkWarningWindow.hide()
+}
+async function authorizeCurrentPublicNetwork(): Promise<void> {
+  if (warningAuthorizationInProgress || !publicNetworkWarningWindow || publicNetworkWarningWindow.isDestroyed()) return
+  warningAuthorizationInProgress = true
+  try {
+    await verifyWithWindowsHello('检测到受限制的公网访问。\n请使用您的凭据授权当前网络访问。')
+    if (lastPublicNetworkId) publicNetworkAuthorizedId = lastPublicNetworkId
+    hidePublicNetworkWarning()
+    lastError = ''
+  } catch (error) {
+    lastError = error instanceof Error ? error.message : '未完成 Windows Hello 验证，当前公网访问仍受限制。'
+  } finally {
+    warningAuthorizationInProgress = false
+    publishStatus()
+  }
+}
+async function showPublicNetworkWarning(): Promise<void> {
+  if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) {
+    publicNetworkWarningWindow.showInactive()
+    publicNetworkWarningWindow.setAlwaysOnTop(true, 'screen-saver')
+    return
+  }
+  const display = screen.getPrimaryDisplay()
+  publicNetworkWarningWindow = new BrowserWindow({
+    x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height,
+    frame: false, fullscreen: true, alwaysOnTop: true, skipTaskbar: true, movable: false, resizable: false,
+    backgroundColor: '#000000', show: false, title: '公网访问限制', icon: iconPath(),
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  })
+  publicNetworkWarningWindow.setAlwaysOnTop(true, 'screen-saver')
+  publicNetworkWarningWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  publicNetworkWarningWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape') { event.preventDefault(); void authorizeCurrentPublicNetwork() }
+  })
+  publicNetworkWarningWindow.on('closed', () => { publicNetworkWarningWindow = null })
+  const image = pathToFileURL(publicNetworkWarningImagePath()).toString()
+  await publicNetworkWarningWindow.loadFile(path.join(__dirname, '../renderer/public-network-warning.html'), { query: { image } })
+  if (!publicNetworkWarningWindow.isDestroyed()) publicNetworkWarningWindow.showInactive()
+}
+async function applyPublicNetworkPolicy(report: DeviceSecurityReport): Promise<void> {
+  const store = await getStore()
+  if (!report.publicAccess) { lastPublicNetworkId = null; hidePublicNetworkWarning(); return }
+  const networkId = report.networkId || report.localIp
+  if (networkId !== lastPublicNetworkId) lastPublicNetworkId = networkId
+  if (store.preferences.allowPublicNetwork || publicNetworkAuthorizedId === networkId) { hidePublicNetworkWarning(); return }
+  await showPublicNetworkWarning()
 }
 async function setStatusFloatVisible(visible: boolean): Promise<void> {
   if (!visible) { statusFloatWindow?.hide(); return }
@@ -463,15 +560,20 @@ function registerIpc(): void {
   ipcMain.handle('tenant:delete', async (_event, tenantId: string) => deleteTenant(tenantId))
   ipcMain.handle('preferences:save', async (_event, input: PreferenceInput) => {
     const store = await getStore(); const nextHello = input.requireWindowsHello === undefined ? store.preferences.requireWindowsHello : Boolean(input.requireWindowsHello)
+    const nextAllowPublicNetwork = input.allowPublicNetwork === undefined ? store.preferences.allowPublicNetwork : Boolean(input.allowPublicNetwork)
     if (nextHello !== store.preferences.requireWindowsHello) await verifyWithWindowsHello('确认更改登录授权验证设置')
+    if (!nextAllowPublicNetwork && nextAllowPublicNetwork !== store.preferences.allowPublicNetwork) await verifyWithWindowsHello('确认限制公网访问设置')
     const floatWidth = input.floatWidth === undefined ? store.preferences.floatWidth : normalizeStatusFloatWidth(input.floatWidth)
     const floatHeight = input.floatHeight === undefined ? store.preferences.floatHeight : normalizeStatusFloatHeight(input.floatHeight)
     store.preferences = {
       launchAtLogin: input.launchAtLogin === undefined ? store.preferences.launchAtLogin : Boolean(input.launchAtLogin), requireWindowsHello: nextHello,
       loginMode: input.loginMode === 'browser' ? 'browser' : 'webview', showStatusFloat: input.showStatusFloat === undefined ? store.preferences.showStatusFloat : Boolean(input.showStatusFloat),
-      floatWidth, floatHeight, floatOpacity: input.floatOpacity === undefined ? store.preferences.floatOpacity : normalizeStatusFloatOpacity(input.floatOpacity), lockStatusFloat: input.lockStatusFloat === undefined ? store.preferences.lockStatusFloat : Boolean(input.lockStatusFloat),
+      floatWidth, floatHeight, floatOpacity: input.floatOpacity === undefined ? store.preferences.floatOpacity : normalizeStatusFloatOpacity(input.floatOpacity), lockStatusFloat: input.lockStatusFloat === undefined ? store.preferences.lockStatusFloat : Boolean(input.lockStatusFloat), allowPublicNetwork: nextAllowPublicNetwork,
     }
-    applyLaunchAtLogin(store.preferences.launchAtLogin); await writeJson(TENANT_STORE_FILE, store); await setStatusFloatVisible(store.preferences.showStatusFloat); publishStatus(); return store.preferences
+    if (nextAllowPublicNetwork !== store.preferences.allowPublicNetwork) publicNetworkAuthorizedId = null
+    applyLaunchAtLogin(store.preferences.launchAtLogin); await writeJson(TENANT_STORE_FILE, store); await setStatusFloatVisible(store.preferences.showStatusFloat)
+    if (securityReport) await applyPublicNetworkPolicy(securityReport)
+    publishStatus(); return store.preferences
   })
   ipcMain.handle('auth:status', getStatus); ipcMain.handle('auth:login', startLogin)
   ipcMain.handle('auth:logout', async () => { await standardLogout(); lastError = ''; publishStatus() })
@@ -487,11 +589,11 @@ else {
     app.setName(PRODUCT_NAME); app.setAppUserModelId(APP_USER_MODEL_ID); Menu.setApplicationMenu(null)
     const loginItemSettings = app.getLoginItemSettings(); launchInTray = launchInTray || Boolean(loginItemSettings.wasOpenedAtLogin)
     registerProtocol(); registerIpc(); const store = await getStore(); applyLaunchAtLogin(store.preferences.launchAtLogin); createTray()
-    const restarted = await invalidateSessionAfterSystemRestart(); scheduleSecurityRefresh(); scheduleNetworkChangeRefresh(); void refreshSecurityReport(); await setStatusFloatVisible(store.preferences.showStatusFloat)
+    const restarted = await invalidateSessionAfterSystemRestart(); scheduleSecurityRefresh(); scheduleNetworkAccessRefresh(); scheduleNetworkChangeRefresh(); scheduleDesktopHostRecovery(); void refreshSecurityReport(); await setStatusFloatVisible(store.preferences.showStatusFloat)
     if (!launchInTray) { createMainWindow(); if (!restarted) await restoreSession() }
     else if (!restarted) await restoreSession()
     publishStatus(); const startupCallback = extractProtocolUrl(process.argv); if (startupCallback) await handleProtocolUrl(startupCallback); app.on('activate', showMainWindow)
   })
   app.on('window-all-closed', () => undefined)
-  app.on('before-quit', () => { isQuitting = true; if (securityRefreshTimer) clearInterval(securityRefreshTimer); if (networkChangeWatchTimer) clearInterval(networkChangeWatchTimer); if (networkChangeRefreshTimer) clearTimeout(networkChangeRefreshTimer); if (statusFloatBoundsSaveTimer) clearTimeout(statusFloatBoundsSaveTimer); void stopCompanion() })
+  app.on('before-quit', () => { isQuitting = true; if (securityRefreshTimer) clearInterval(securityRefreshTimer); if (networkAccessRefreshTimer) clearInterval(networkAccessRefreshTimer); if (networkChangeWatchTimer) clearInterval(networkChangeWatchTimer); if (desktopHostWatchTimer) clearInterval(desktopHostWatchTimer); if (networkChangeRefreshTimer) clearTimeout(networkChangeRefreshTimer); if (statusFloatBoundsSaveTimer) clearTimeout(statusFloatBoundsSaveTimer); void stopCompanion() })
 }

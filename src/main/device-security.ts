@@ -20,6 +20,7 @@ export type DeviceSecurityReport = {
   checkedAt: string
   localIp: string
   publicAccess: boolean
+  networkId: string
   platformSupported: boolean
 }
 
@@ -32,6 +33,7 @@ type RawSecurityData = {
   firewall?: CheckValue
   localIp?: string
   publicAccess?: boolean
+  networkId?: string
   platformSupported?: boolean
 }
 
@@ -98,7 +100,7 @@ function buildReport(data: RawSecurityData, platformSupported = true): DeviceSec
   const risk = issueCount === 0 ? 'pass' : issueCount > 2 ? 'danger' : 'warning'
   return {
     checks, risk, issueCount, unknownCount, checkedAt: new Date().toISOString(), localIp: asText(data.localIp) || '网络未连接', publicAccess: asText(data.localIp) !== '' && data.publicAccess === true,
-    platformSupported: data.platformSupported !== false && platformSupported,
+    networkId: asText(data.networkId) || asText(data.localIp) || 'offline', platformSupported: data.platformSupported !== false && platformSupported,
   }
 }
 
@@ -114,6 +116,7 @@ $result = [ordered]@{
   firewall = New-Check
   localIp = ''
   publicAccess = $false
+  networkId = 'offline'
 }
 
 # Win32_UserAccount.PasswordRequired：当前本地账户是否要求 Windows 登录凭据。
@@ -195,6 +198,9 @@ try {
   })
   $private = @($ips | Where-Object { $_ -like '10.*' -or $_ -like '192.168.*' -or $_ -match '^172\\.(1[6-9]|2[0-9]|3[0-1])\\.' })
   $result.localIp = [string](@($private + $ips | Select-Object -Unique | Select-Object -First 1))
+  $profile = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceIndex -in $activeIfIndex } | Select-Object -First 1)
+  if ($profile.Count -gt 0) { $result.networkId = "$([string]$profile[0].Name)|$([string]$profile[0].InterfaceAlias)|$($result.localIp)" }
+  elseif ($result.localIp) { $result.networkId = [string]$result.localIp }
 } catch {}
 
 if ($result.localIp) {
@@ -216,4 +222,44 @@ export async function collectDeviceSecurityReport(): Promise<DeviceSecurityRepor
       password: { available: false, detail }, bitlocker: { available: false, detail }, antivirus: { available: false, detail }, signatures: { available: false, detail }, firewall: { available: false, detail },
     })
   }
+}
+
+
+const networkAccessScript = `
+$ErrorActionPreference = 'Stop'
+$result = [ordered]@{ localIp = ''; publicAccess = $false; networkId = 'offline' }
+try {
+  $activeIfIndex = @((Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { [int]$_.ifIndex }))
+  $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Where-Object {
+    $_.ifIndex -in $activeIfIndex -and $_.AddressState -eq 'Preferred'
+  } | ForEach-Object { [string]$_.IPAddress } | Where-Object {
+    $_ -notmatch '^(127\\.|169\\.254\\.|0\\.|2(2[4-9]|[3-5][0-9])\\.|255\\.)'
+  })
+  $private = @($ips | Where-Object { $_ -like '10.*' -or $_ -like '192.168.*' -or $_ -match '^172\\.(1[6-9]|2[0-9]|3[0-1])\\.' })
+  $result.localIp = [string](@($private + $ips | Select-Object -Unique | Select-Object -First 1))
+  $profile = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceIndex -in $activeIfIndex } | Select-Object -First 1)
+  if ($profile.Count -gt 0) { $result.networkId = "$([string]$profile[0].Name)|$([string]$profile[0].InterfaceAlias)|$($result.localIp)" }
+  elseif ($result.localIp) { $result.networkId = [string]$result.localIp }
+} catch {}
+if ($result.localIp) {
+  try { $result.publicAccess = [bool](Test-NetConnection -ComputerName 172.64.36.1 -InformationLevel Quiet -ErrorAction Stop) }
+  catch { $result.publicAccess = $false }
+}
+$json = $result | ConvertTo-Json -Depth 3 -Compress
+[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
+`
+
+export type NetworkAccessState = Pick<DeviceSecurityReport, 'localIp' | 'publicAccess' | 'networkId'>
+
+/**
+ * 仅刷新网络状态。该探测会在 Wi-Fi 门户认证等“IP 未变、出网能力变化”的场景定时执行，
+ * 不重复读取 BitLocker、杀毒与防火墙等安全项。
+ */
+export async function collectNetworkAccessState(): Promise<NetworkAccessState> {
+  if (process.platform !== 'win32') return { localIp: '网络未连接', publicAccess: false, networkId: 'offline' }
+  try {
+    const data = await runPowerShell(networkAccessScript)
+    const localIp = asText(data.localIp) || '网络未连接'
+    return { localIp, publicAccess: localIp !== '网络未连接' && data.publicAccess === true, networkId: asText(data.networkId) || localIp }
+  } catch { return { localIp: '网络未连接', publicAccess: false, networkId: 'offline' } }
 }

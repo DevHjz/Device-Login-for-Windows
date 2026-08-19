@@ -1,6 +1,6 @@
 {
   "name": "cloud-verify-device-auth",
-  "version": "3.0.8",
+  "version": "3.0.9",
   "private": true,
   "description": "Cloud Verify Device Auth for Windows",
   "main": "dist/main/index.js",
@@ -43,6 +43,10 @@
       {
         "from": "assets/app.ico",
         "to": "app.ico"
+      },
+      {
+        "from": "assets/public-network-warning.webp",
+        "to": "public-network-warning.webp"
       }
     ],
     "win": {
