@@ -12,11 +12,17 @@
     message.textContent = ''
     const value = password.value
     if (!value) return
-    const result = await window.cloudVerifyDevice.unlockPublicNetwork(value)
-    if (!result.accepted) {
-      password.value = ''
+    // 无论验证结果如何，密码都不保留在弹窗控件中。
+    password.value = ''
+    try {
+      const result = await window.cloudVerifyDevice.unlockPublicNetwork(value)
+      if (!result.accepted) {
+        password.focus()
+        message.textContent = result.message || '管理员密码不正确。'
+      }
+    } catch {
       password.focus()
-      message.textContent = result.message || '管理员密码不正确。'
+      message.textContent = '密码验证未完成，请稍后重试。'
     }
   })
   password.focus()

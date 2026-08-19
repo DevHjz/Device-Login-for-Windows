@@ -187,8 +187,11 @@ function renderPreferences(data: AppData): void {
   elements.lockStatusFloat.checked = data.preferences.lockStatusFloat
   elements.lockStatusFloat.disabled = !data.preferences.showStatusFloat
   elements.allowPublicNetwork.checked = data.preferences.allowPublicNetwork
+  elements.allowPublicNetwork.disabled = !data.hasPublicNetworkPassword
   elements.publicNetworkPassword.value = ''
-  elements.publicNetworkPasswordState.textContent = data.hasPublicNetworkPassword ? '管理员密码已设置。' : '尚未设置管理员密码。'
+  elements.publicNetworkPasswordState.textContent = data.hasPublicNetworkPassword
+    ? '管理员密码已设置。更新密码时需要 Windows Hello 验证。'
+    : '尚未设置管理员密码。请先保存密码并完成 Windows Hello 验证，随后才能限制公网访问。'
   elements.requireWindowsHello.checked = data.preferences.requireWindowsHello
   elements.requireWindowsHello.disabled = !data.helloAvailability.available
   elements.helloHelp.textContent = data.helloAvailability.available ? '开启后，授权每次网页登录前均需完成一次 Windows Hello 验证。' : data.helloAvailability.message

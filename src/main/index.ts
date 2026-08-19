@@ -605,8 +605,11 @@ function registerIpc(): void {
     const nextAllowPublicNetwork = input.allowPublicNetwork === undefined ? store.preferences.allowPublicNetwork : Boolean(input.allowPublicNetwork)
     const suppliedPublicNetworkPassword = typeof input.publicNetworkPassword === 'string' ? input.publicNetworkPassword : undefined
     if (suppliedPublicNetworkPassword !== undefined && (suppliedPublicNetworkPassword.length < 6 || suppliedPublicNetworkPassword.length > 256)) throw new Error('管理员密码长度应为 6–256 个字符。')
-    if (nextHello !== store.preferences.requireWindowsHello) await verifyWithWindowsHello('确认更改登录授权验证设置')
-    if (!nextAllowPublicNetwork && !store.publicNetworkPasswordEncrypted && suppliedPublicNetworkPassword === undefined) throw new Error('请先设置管理员密码，再限制公网访问。')
+    // 管理员密码可解除全屏公网限制，因此每次设置或更新均须由当前 Windows 用户完成验证。
+    if (suppliedPublicNetworkPassword !== undefined) await verifyWithWindowsHello('确认设置公网限制管理员密码')
+    else if (nextHello !== store.preferences.requireWindowsHello) await verifyWithWindowsHello('确认更改登录授权验证设置')
+    // 禁止公网前必须已有一份成功保存的管理员密码；不接受同一次提交中同时设置密码与关闭开关。
+    if (!nextAllowPublicNetwork && !store.publicNetworkPasswordEncrypted) throw new Error('请先单独保存管理员密码，再限制公网访问。')
     if (suppliedPublicNetworkPassword !== undefined) store.publicNetworkPasswordEncrypted = encodeProtected(suppliedPublicNetworkPassword)
     const floatWidth = input.floatWidth === undefined ? store.preferences.floatWidth : normalizeStatusFloatWidth(input.floatWidth)
     const floatHeight = input.floatHeight === undefined ? store.preferences.floatHeight : normalizeStatusFloatHeight(input.floatHeight)
