@@ -11,7 +11,7 @@ type PublicTenant = {
   source: 'built-in' | 'custom'
 }
 type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean; allowPublicNetwork: boolean }
-type PreferenceInput = Partial<Preferences>
+type PreferenceInput = Partial<Preferences> & { publicNetworkPassword?: string }
 type HelloAvailability = { available: boolean; message: string }
 type SecurityCheck = { id: 'password' | 'bitlocker' | 'antivirus' | 'signatures' | 'firewall'; title: string; state: 'pass' | 'warning' | 'unknown'; detail: string }
 type DeviceSecurityReport = { checks: SecurityCheck[]; risk: 'pass' | 'warning' | 'danger'; issueCount: number; unknownCount: number; checkedAt: string; localIp: string; publicAccess: boolean; platformSupported: boolean }
@@ -20,7 +20,7 @@ type Status = {
   lastError?: string; activeTenantId?: string; activeTenantName?: string; activeTenantOrgName?: string
   requireWindowsHello: boolean; loginMode: 'webview' | 'browser'; floatOpacity: number; securityReport?: DeviceSecurityReport
 }
-type AppData = { tenants: PublicTenant[]; activeTenant: PublicTenant; preferences: Preferences; helloAvailability: HelloAvailability; status: Status }
+type AppData = { tenants: PublicTenant[]; activeTenant: PublicTenant; preferences: Preferences; helloAvailability: HelloAvailability; hasPublicNetworkPassword: boolean; status: Status }
 type TenantInput = Partial<Omit<PublicTenant, 'source'>> & { allowedOrigins?: string[] }
 
 interface Window {
@@ -35,6 +35,7 @@ interface Window {
     logout(): Promise<void>
     refreshSecurity(): Promise<DeviceSecurityReport>
     resetToDefaults(): Promise<void>
+    unlockPublicNetwork(password: string): Promise<{ accepted: boolean; message?: string }>
     onStatusChanged(listener: (status: Status) => void): () => void
   }
 }
@@ -74,6 +75,9 @@ const elements = {
   floatOpacityValue: byId<HTMLOutputElement>('float-opacity-value'),
   lockStatusFloat: byId<HTMLInputElement>('lock-status-float'),
   allowPublicNetwork: byId<HTMLInputElement>('allow-public-network'),
+  publicNetworkPassword: byId<HTMLInputElement>('public-network-password'),
+  publicNetworkPasswordState: byId<HTMLElement>('public-network-password-state'),
+  savePublicNetworkPassword: byId<HTMLButtonElement>('save-public-network-password'),
   requireWindowsHello: byId<HTMLInputElement>('require-windows-hello'),
   helloHelp: byId<HTMLElement>('hello-help'),
   settingsMessage: byId<HTMLElement>('settings-message'),
@@ -183,6 +187,8 @@ function renderPreferences(data: AppData): void {
   elements.lockStatusFloat.checked = data.preferences.lockStatusFloat
   elements.lockStatusFloat.disabled = !data.preferences.showStatusFloat
   elements.allowPublicNetwork.checked = data.preferences.allowPublicNetwork
+  elements.publicNetworkPassword.value = ''
+  elements.publicNetworkPasswordState.textContent = data.hasPublicNetworkPassword ? '管理员密码已设置。' : '尚未设置管理员密码。'
   elements.requireWindowsHello.checked = data.preferences.requireWindowsHello
   elements.requireWindowsHello.disabled = !data.helloAvailability.available
   elements.helloHelp.textContent = data.helloAvailability.available ? '开启后，授权每次网页登录前均需完成一次 Windows Hello 验证。' : data.helloAvailability.message
@@ -230,6 +236,7 @@ async function savePreferences(): Promise<void> {
       launchAtLogin: elements.launchAtLogin.checked, requireWindowsHello: elements.requireWindowsHello.checked,
       loginMode: elements.loginMode.value === 'browser' ? 'browser' : 'webview', showStatusFloat: elements.showStatusFloat.checked,
       floatWidth: Number(elements.floatWidth.value), floatHeight: Number(elements.floatHeight.value), floatOpacity: Number(elements.floatOpacity.value), lockStatusFloat: elements.lockStatusFloat.checked, allowPublicNetwork: elements.allowPublicNetwork.checked,
+      ...(elements.publicNetworkPassword.value ? { publicNetworkPassword: elements.publicNetworkPassword.value } : {}),
     })
     await reload(); setMessage(elements.settingsMessage, '系统设置已保存。')
   } catch (error) {
@@ -289,6 +296,7 @@ function bindEvents(): void {
   elements.floatOpacity.addEventListener('change', () => void savePreferences())
   elements.lockStatusFloat.addEventListener('change', () => void savePreferences())
   elements.allowPublicNetwork.addEventListener('change', () => void savePreferences())
+  elements.savePublicNetworkPassword.addEventListener('click', () => void savePreferences())
   elements.requireWindowsHello.addEventListener('change', () => void savePreferences())
   elements.resetToDefaults.addEventListener('click', () => void handleResetToDefaults())
   elements.login.addEventListener('click', () => void handleLogin())

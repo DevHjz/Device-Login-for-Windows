@@ -23,7 +23,8 @@ assert.doesNotMatch(identityClient, /clientSecret/);
 assert.doesNotMatch(identityClient, /client_secret/);
 assert.doesNotMatch(preload, /clientSecret/);
 assert.doesNotMatch(renderer, /clientSecret|hasClientSecret/);
-assert.doesNotMatch(html, /tenant-client-secret|type="password"/);
+assert.doesNotMatch(html, /tenant-client-secret/);
+assert.match(html, /id="public-network-password" type="password"/);
 assert.doesNotMatch(workflow, /secrets\.|CLIENT_SECRET|client-secret/i);
 
 function startTokenEndpoint() {

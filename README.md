@@ -78,7 +78,7 @@ cloud-verify-device-login://oauth/callback
 
 ## 六、公网访问限制
 
-系统设置中的“允许连接公网”默认开启。关闭时需要完成一次 Windows Hello 确认；随后检测到新的公网访问会显示全屏最高层警示。用户需按 `Esc` 并完成 Windows Hello 验证，才会关闭警示并仅授权当前公网；连接到新的公网后会再次要求验证。
+系统设置中的“允许连接公网”默认开启。管理员应先设置不少于 6 个字符的本机管理员密码；该密码仅使用 Windows DPAPI 加密保存，不会回显或传输到网络。关闭允许连接公网后，检测到新的公网访问会以 kiosk 模式显示无提示的全屏最高层警示，覆盖任务栏。用户按 `Esc` 后输入管理员密码，才会关闭警示并仅授权当前公网；连接到新的公网后会再次要求验证。
 
 警示图片以明文资源 `public-network-warning.webp` 随应用目录提供，可由部署管理员直接替换为同名图片，不需要重新编译应用。
 
@@ -93,8 +93,8 @@ cloud-verify-device-login://oauth/callback
 工作流文件为 [`.github/workflows/windows-release.yml`](.github/workflows/windows-release.yml)。推送 `main`、推送 `v*` 标签、提交拉取请求或手动触发时，工作流执行类型检查、Native SSO 回归、Windows 外壳回归、设备安全态势回归、公共客户端 PKCE 回归与发布配置校验。
 
 ```text
-cloud-verify-device-auth-3.0.9-win-x64-setup.exe
-cloud-verify-device-auth-3.0.9-win-arm64-setup.exe
+cloud-verify-device-auth-3.0.10-win-x64-setup.exe
+cloud-verify-device-auth-3.0.10-win-arm64-setup.exe
 ```
 
 最终工件 `cloud-verify-device-auth-windows-x64-arm64.zip` 只包含上述两个 EXE 文件。工作流不引用、校验或注入任何租户 client secret。生产环境建议在受保护的签名流程中使用组织的 Authenticode 证书。

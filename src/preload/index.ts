@@ -49,7 +49,8 @@ type Status = {
   securityReport?: DeviceSecurityReport
 }
 type TenantInput = { displayName?: string; endpoint?: string; clientId?: string; orgName?: string; appName?: string; certificate?: string; allowedOrigins?: string[]; deviceName?: string }
-type AppData = { tenants: PublicTenant[]; activeTenant: PublicTenant; preferences: Preferences; helloAvailability: HelloAvailability; status: Status }
+type AppData = { tenants: PublicTenant[]; activeTenant: PublicTenant; preferences: Preferences; helloAvailability: HelloAvailability; hasPublicNetworkPassword: boolean; status: Status }
+type PublicNetworkUnlockResult = { accepted: boolean; message?: string }
 
 const api = {
   loadApp: (): Promise<AppData> => ipcRenderer.invoke('app:load'),
@@ -62,6 +63,7 @@ const api = {
   logout: (): Promise<void> => ipcRenderer.invoke('auth:logout'),
   refreshSecurity: (): Promise<DeviceSecurityReport> => ipcRenderer.invoke('security:refresh'),
   resetToDefaults: (): Promise<void> => ipcRenderer.invoke('app:reset'),
+  unlockPublicNetwork: (password: string): Promise<PublicNetworkUnlockResult> => ipcRenderer.invoke('public-network:unlock', password),
   onStatusChanged: (listener: (status: Status) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, status: Status): void => listener(status)
     ipcRenderer.on('status:changed', handler)

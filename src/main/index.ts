@@ -36,8 +36,8 @@ type StatusFloatBounds = { x: number; y: number; width: number; height: number }
 type Tenant = TenantPreset & { createdAt: string; updatedAt: string; source: 'built-in' | 'custom' }
 type TenantInput = { displayName?: string; endpoint?: string; clientId?: string; orgName?: string; appName?: string; certificate?: string; allowedOrigins?: unknown; deviceName?: string }
 type Preferences = { launchAtLogin: boolean; requireWindowsHello: boolean; loginMode: LoginMode; showStatusFloat: boolean; floatWidth: number; floatHeight: number; floatOpacity: number; lockStatusFloat: boolean; allowPublicNetwork: boolean }
-type PreferenceInput = Partial<Preferences>
-type TenantStore = { activeTenantId: string; customTenants: Tenant[]; deletedBuiltInTenantIds: string[]; preferences: Preferences }
+type PreferenceInput = Partial<Preferences> & { publicNetworkPassword?: string }
+type TenantStore = { activeTenantId: string; customTenants: Tenant[]; deletedBuiltInTenantIds: string[]; preferences: Preferences; publicNetworkPasswordEncrypted?: string }
 type StoredSession = { tenantId: string; accessTokenEncrypted: string; refreshTokenEncrypted?: string; deviceSecretEncrypted?: string; userName: string; displayName: string; email?: string; emailLookupAttempted?: boolean; avatar: string; expiresAt?: number; bootMarker: string }
 type PendingLoginRequest = { tenantId: string; codeVerifier: string; timeout: NodeJS.Timeout }
 type Status = {
@@ -50,6 +50,7 @@ let mainWindow: BrowserWindow | null = null
 let authWindow: BrowserWindow | null = null
 let statusFloatWindow: BrowserWindow | null = null
 let publicNetworkWarningWindow: BrowserWindow | null = null
+let publicNetworkPasswordWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let companion: NativeSsoService | null = null
 let companionPort: number | null = null
@@ -149,6 +150,7 @@ async function getStore(): Promise<TenantStore> {
     activeTenantId: typeof stored.activeTenantId === 'string' ? stored.activeTenantId : BUILT_IN_TENANTS[0].id,
     customTenants: Array.isArray(stored.customTenants) ? stored.customTenants.map(cleanTenant).filter((tenant): tenant is Tenant => Boolean(tenant)) : [],
     deletedBuiltInTenantIds: Array.isArray(stored.deletedBuiltInTenantIds) ? stored.deletedBuiltInTenantIds.filter((id): id is string => typeof id === 'string') : [],
+    publicNetworkPasswordEncrypted: typeof stored.publicNetworkPasswordEncrypted === 'string' && stored.publicNetworkPasswordEncrypted ? stored.publicNetworkPasswordEncrypted : undefined,
     preferences: {
       launchAtLogin: Boolean(rawPreferences.launchAtLogin), requireWindowsHello: Boolean(rawPreferences.requireWindowsHello),
       loginMode: rawPreferences.loginMode === 'browser' ? 'browser' : 'webview', showStatusFloat: rawPreferences.showStatusFloat !== false,
@@ -446,45 +448,68 @@ function reassertStatusFloatDesktopLayer(): void {
   })
 }
 function hidePublicNetworkWarning(): void {
+  if (publicNetworkPasswordWindow && !publicNetworkPasswordWindow.isDestroyed()) publicNetworkPasswordWindow.hide()
   if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) publicNetworkWarningWindow.hide()
 }
-async function authorizeCurrentPublicNetwork(): Promise<void> {
-  if (warningAuthorizationInProgress || !publicNetworkWarningWindow || publicNetworkWarningWindow.isDestroyed()) return
+function isPublicNetworkPasswordValid(expected: string, supplied: string): boolean {
+  const expectedBytes = Buffer.from(expected, 'utf8')
+  const suppliedBytes = Buffer.from(supplied, 'utf8')
+  return expectedBytes.length === suppliedBytes.length && crypto.timingSafeEqual(expectedBytes, suppliedBytes)
+}
+async function unlockCurrentPublicNetworkWithPassword(password: string): Promise<{ accepted: boolean; message?: string }> {
+  if (warningAuthorizationInProgress || !publicNetworkWarningWindow || publicNetworkWarningWindow.isDestroyed()) return { accepted: false, message: '当前没有需要解除的公网访问限制。' }
+  const store = await getStore()
+  if (!store.publicNetworkPasswordEncrypted) return { accepted: false, message: '尚未设置管理员密码，无法解除公网访问限制。' }
+  let expected = ''
+  try { expected = decodeProtected(store.publicNetworkPasswordEncrypted) } catch { return { accepted: false, message: '无法读取本机管理员密码设置。' } }
+  if (!isPublicNetworkPasswordValid(expected, password)) return { accepted: false, message: '管理员密码不正确。' }
   warningAuthorizationInProgress = true
   try {
-    await verifyWithWindowsHello('检测到受限制的公网访问。\n请使用您的凭据授权当前网络访问。')
     if (lastPublicNetworkId) publicNetworkAuthorizedId = lastPublicNetworkId
     hidePublicNetworkWarning()
     lastError = ''
-  } catch (error) {
-    lastError = error instanceof Error ? error.message : '未完成 Windows Hello 验证，当前公网访问仍受限制。'
+    return { accepted: true }
   } finally {
     warningAuthorizationInProgress = false
     publishStatus()
   }
 }
+async function showPublicNetworkPasswordPrompt(): Promise<void> {
+  if (!publicNetworkWarningWindow || publicNetworkWarningWindow.isDestroyed()) return
+  if (publicNetworkPasswordWindow && !publicNetworkPasswordWindow.isDestroyed()) { publicNetworkPasswordWindow.show(); publicNetworkPasswordWindow.focus(); return }
+  publicNetworkPasswordWindow = new BrowserWindow({
+    width: 380, height: 250, useContentSize: true, frame: false, modal: true, parent: publicNetworkWarningWindow,
+    alwaysOnTop: true, skipTaskbar: true, resizable: false, movable: false, show: false, backgroundColor: '#eef5ff', title: '解除公网访问限制', icon: iconPath(),
+    webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true, nodeIntegration: false },
+  })
+  publicNetworkPasswordWindow.setAlwaysOnTop(true, 'screen-saver')
+  publicNetworkPasswordWindow.on('closed', () => { publicNetworkPasswordWindow = null })
+  await publicNetworkPasswordWindow.loadFile(path.join(__dirname, '../renderer/public-network-password.html'))
+  if (!publicNetworkPasswordWindow.isDestroyed()) { publicNetworkPasswordWindow.show(); publicNetworkPasswordWindow.focus() }
+}
 async function showPublicNetworkWarning(): Promise<void> {
   if (publicNetworkWarningWindow && !publicNetworkWarningWindow.isDestroyed()) {
-    publicNetworkWarningWindow.showInactive()
+    publicNetworkWarningWindow.show()
+    publicNetworkWarningWindow.focus()
     publicNetworkWarningWindow.setAlwaysOnTop(true, 'screen-saver')
     return
   }
   const display = screen.getPrimaryDisplay()
   publicNetworkWarningWindow = new BrowserWindow({
     x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height,
-    frame: false, fullscreen: true, alwaysOnTop: true, skipTaskbar: true, movable: false, resizable: false,
+    frame: false, fullscreen: true, kiosk: true, alwaysOnTop: true, skipTaskbar: true, movable: false, resizable: false,
     backgroundColor: '#000000', show: false, title: '公网访问限制', icon: iconPath(),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
   })
   publicNetworkWarningWindow.setAlwaysOnTop(true, 'screen-saver')
   publicNetworkWarningWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   publicNetworkWarningWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && input.key === 'Escape') { event.preventDefault(); void authorizeCurrentPublicNetwork() }
+    if (input.type === 'keyDown' && input.key === 'Escape') { event.preventDefault(); void showPublicNetworkPasswordPrompt() }
   })
   publicNetworkWarningWindow.on('closed', () => { publicNetworkWarningWindow = null })
   const image = pathToFileURL(publicNetworkWarningImagePath()).toString()
   await publicNetworkWarningWindow.loadFile(path.join(__dirname, '../renderer/public-network-warning.html'), { query: { image } })
-  if (!publicNetworkWarningWindow.isDestroyed()) publicNetworkWarningWindow.showInactive()
+  if (!publicNetworkWarningWindow.isDestroyed()) { publicNetworkWarningWindow.show(); publicNetworkWarningWindow.focus() }
 }
 async function applyPublicNetworkPolicy(report: DeviceSecurityReport): Promise<void> {
   const store = await getStore()
@@ -554,15 +579,18 @@ async function resetToDefaults(): Promise<void> {
   publishStatus()
 }
 function registerIpc(): void {
-  ipcMain.handle('app:load', async () => { const store = await getStore(); return { tenants: listTenants(store), activeTenant: await getActiveTenant(store), preferences: store.preferences, helloAvailability: await getWindowsHelloAvailability(), status: await getStatus() } })
+  ipcMain.handle('app:load', async () => { const store = await getStore(); return { tenants: listTenants(store), activeTenant: await getActiveTenant(store), preferences: store.preferences, helloAvailability: await getWindowsHelloAvailability(), hasPublicNetworkPassword: Boolean(store.publicNetworkPasswordEncrypted), status: await getStatus() } })
   ipcMain.handle('tenant:select', async (_event, tenantId: string) => selectTenant(tenantId))
   ipcMain.handle('tenant:add', async (_event, input: TenantInput) => addTenant(input))
   ipcMain.handle('tenant:delete', async (_event, tenantId: string) => deleteTenant(tenantId))
   ipcMain.handle('preferences:save', async (_event, input: PreferenceInput) => {
     const store = await getStore(); const nextHello = input.requireWindowsHello === undefined ? store.preferences.requireWindowsHello : Boolean(input.requireWindowsHello)
     const nextAllowPublicNetwork = input.allowPublicNetwork === undefined ? store.preferences.allowPublicNetwork : Boolean(input.allowPublicNetwork)
+    const suppliedPublicNetworkPassword = typeof input.publicNetworkPassword === 'string' ? input.publicNetworkPassword : undefined
+    if (suppliedPublicNetworkPassword !== undefined && (suppliedPublicNetworkPassword.length < 6 || suppliedPublicNetworkPassword.length > 256)) throw new Error('管理员密码长度应为 6–256 个字符。')
     if (nextHello !== store.preferences.requireWindowsHello) await verifyWithWindowsHello('确认更改登录授权验证设置')
-    if (!nextAllowPublicNetwork && nextAllowPublicNetwork !== store.preferences.allowPublicNetwork) await verifyWithWindowsHello('确认限制公网访问设置')
+    if (!nextAllowPublicNetwork && !store.publicNetworkPasswordEncrypted && suppliedPublicNetworkPassword === undefined) throw new Error('请先设置管理员密码，再限制公网访问。')
+    if (suppliedPublicNetworkPassword !== undefined) store.publicNetworkPasswordEncrypted = encodeProtected(suppliedPublicNetworkPassword)
     const floatWidth = input.floatWidth === undefined ? store.preferences.floatWidth : normalizeStatusFloatWidth(input.floatWidth)
     const floatHeight = input.floatHeight === undefined ? store.preferences.floatHeight : normalizeStatusFloatHeight(input.floatHeight)
     store.preferences = {
@@ -574,6 +602,11 @@ function registerIpc(): void {
     applyLaunchAtLogin(store.preferences.launchAtLogin); await writeJson(TENANT_STORE_FILE, store); await setStatusFloatVisible(store.preferences.showStatusFloat)
     if (securityReport) await applyPublicNetworkPolicy(securityReport)
     publishStatus(); return store.preferences
+  })
+  ipcMain.handle('public-network:unlock', async (event, password: unknown) => {
+    if (!publicNetworkPasswordWindow || publicNetworkPasswordWindow.isDestroyed() || event.sender.id !== publicNetworkPasswordWindow.webContents.id) return { accepted: false, message: '当前验证窗口不可用。' }
+    if (typeof password !== 'string' || password.length === 0 || password.length > 256) return { accepted: false, message: '请输入管理员密码。' }
+    return unlockCurrentPublicNetworkWithPassword(password)
   })
   ipcMain.handle('auth:status', getStatus); ipcMain.handle('auth:login', startLogin)
   ipcMain.handle('auth:logout', async () => { await standardLogout(); lastError = ''; publishStatus() })

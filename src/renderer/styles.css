@@ -120,3 +120,9 @@ input[type="checkbox"]:disabled { opacity: .45; }
   .float-opacity-controls { min-width: 0; }
   .float-opacity-controls input[type="range"] { flex: 1; }
 }
+
+.public-network-password-controls { display: flex; align-items: center; gap: 8px; }
+.public-network-password-controls input { width: min(230px, 100%); min-height: 36px; padding: 0 10px; border: 1px solid #c7d5ea; border-radius: 7px; color: #163154; background: #fff; font: inherit; }
+.public-network-password-controls input:focus { outline: 3px solid rgb(39 117 212 / .18); border-color: #2775d4; }
+.public-network-password-controls .button { min-height: 36px; white-space: nowrap; }
+@media (max-width: 620px) { .public-network-password-controls { width: 100%; align-items: stretch; flex-direction: column; } .public-network-password-controls input { width: 100%; } }
